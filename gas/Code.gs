@@ -230,7 +230,7 @@ function fxRow(t, showDate) {
   };
 }
 
-/** 毎朝の通知をカード形式で作る。urls は { sheet, page }。 */
+/** 毎朝の通知をカード形式で作る。urls は { page }。 */
 function buildFlexMessage(tasks, today, urls) {
   urls = urls || {};
   var c = classify(tasks, today);
@@ -287,12 +287,8 @@ function buildFlexMessage(tasks, today, urls) {
     body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: body }
   };
   var buttons = [];
-  if (/^https:\/\//.test(urls.sheet || '')) {
-    buttons.push({ type: 'button', style: 'primary', color: FX.ink, height: 'sm',
-      action: { type: 'uri', label: 'シートを開いて更新', uri: urls.sheet } });
-  }
   if (/^https:\/\//.test(urls.page || '')) {
-    buttons.push({ type: 'button', style: 'secondary', height: 'sm',
+    buttons.push({ type: 'button', style: 'primary', color: FX.ink, height: 'sm',
       action: { type: 'uri', label: '一覧ページを開く', uri: urls.page } });
   }
   if (buttons.length) bubble.footer = { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: buttons };
@@ -407,7 +403,7 @@ function checkSettings() {
 function sendMorningDigest() {
   var pageUrl = PropertiesService.getScriptProperties().getProperty('PAGE_URL') || '';
   var tasks = readTasks_(), today = todayString_();
-  var flex = buildFlexMessage(tasks, today, { sheet: SpreadsheetApp.getActive().getUrl(), page: pageUrl });
+  var flex = buildFlexMessage(tasks, today, { page: pageUrl });
   var res = pushMessages_([flex]);
   if (res.getResponseCode() === 200) return;
   // カード形式が通らなかったときは、理由をログに残して文字だけの通知を送る

@@ -120,7 +120,7 @@ test('カード形式：倉本が先、空の文字なし、容量内', () => {
     row('一期一会', 'DQ5', '修正', '倉本', '', '', '作業中')
   ];
   const tasks = gas.parseRows(values, '2026-11-15');
-  const msg = gas.buildFlexMessage(tasks, '2026-11-15', { sheet: 'https://docs.google.com/x', page: '' });
+  const msg = gas.buildFlexMessage(tasks, '2026-11-15', { page: 'https://script.google.com/x' });
   assert.equal(msg.type, 'flex');
   assert.equal(msg.altText, '制作の期限 11/15(日)：今日2件・明日1件'.replace('今日2件', '今日3件'));
   const texts = [];
