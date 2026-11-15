@@ -145,3 +145,14 @@ test('カード形式：倉本が先、空の文字なし、容量内', () => {
   assert.equal(none.altText, '制作の期限 11/15(日)：該当なし');
   assert.equal(none.contents.footer, undefined);
 });
+
+test('送信先を複数持てる', () => {
+  const a = 'C' + 'a'.repeat(32), b = 'C' + 'b'.repeat(32), u = 'U' + '0'.repeat(32);
+  assert.deepEqual([...gas.parseDestinations(a)], [a]);
+  assert.deepEqual([...gas.parseDestinations(` ${a} ,\n${b},${a}`)], [a, b]);
+  assert.deepEqual([...gas.parseDestinations('2012616293, ,abc')], []);
+  assert.deepEqual([...gas.parseDestinations(null)], []);
+  assert.equal(gas.addDestination(a, b), a + ',' + b);
+  assert.equal(gas.addDestination(a + ',' + b, a), a + ',' + b);
+  assert.equal(gas.addDestination('', u), u);
+});

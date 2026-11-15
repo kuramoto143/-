@@ -4,7 +4,7 @@
  *
  * スクリプト プロパティ（プロジェクトの設定 > スクリプト プロパティ）
  *   LINE_TOKEN : LINE Messaging API のチャネルアクセストークン（長期）
- *   LINE_TO    : 送信先のユーザーID（Uで始まる33文字）。グループIDやルームIDも使える
+ *   LINE_TO    : 送信先のID。グループIDやユーザーIDをカンマ区切りで複数入れられる
  *   PAGE_URL   : 閲覧ページのURL（任意。入れると通知の末尾に付く）
  */
 
@@ -299,6 +299,24 @@ function buildFlexMessage(tasks, today, urls) {
   return { type: 'flex', altText: alt.slice(0, 400), contents: bubble };
 }
 
+/* ---------- 送信先の一覧 ---------- */
+
+/** LINE_TO の値（カンマ区切り）を、送信先IDの配列にする。形の違うものと重複は除く。 */
+function parseDestinations(value) {
+  var seen = {}, out = [];
+  String(value == null ? '' : value).split(/[,、\s]+/).forEach(function (id) {
+    if (/^[UCR][0-9a-f]{32}$/.test(id) && !seen[id]) { seen[id] = true; out.push(id); }
+  });
+  return out;
+}
+
+/** 送信先を1つ足した LINE_TO の値を返す。すでに入っていれば元のまま。 */
+function addDestination(value, id) {
+  var list = parseDestinations(value);
+  if (list.indexOf(id) === -1) list.push(id);
+  return list.join(',');
+}
+
 /* ---------- グループIDの受け取り ---------- */
 
 /**
@@ -331,13 +349,30 @@ function doPost(e) {
   return ContentService.createTextOutput('ok');
 }
 
-/** 控えておいたグループを送信先にして、確認の1通を送る。 */
-function useGroup() {
-  var props = PropertiesService.getScriptProperties();
-  var id = props.getProperty('LINE_GROUP_ID');
+function latestGroupId_() {
+  var id = PropertiesService.getScriptProperties().getProperty('LINE_GROUP_ID');
   if (!id) throw new Error('グループIDをまだ受け取っていません。botをグループに招待し、グループで何か1通送ってから実行してください。');
-  props.setProperty('LINE_TO', id);
-  pushLine_('このグループに、毎朝の制作期限を送ります。');
+  return id;
+}
+
+/** 最後に受け取ったグループだけを送信先にして、確認の1通を送る（ほかの送信先は外れる）。 */
+function useGroup() {
+  var id = latestGroupId_();
+  PropertiesService.getScriptProperties().setProperty('LINE_TO', id);
+  pushLine_('このグループに、毎朝の制作期限を送ります。', id);
+}
+
+/** 最後に受け取ったグループを送信先に追加して、そのグループに確認の1通を送る。 */
+function addGroup() {
+  var props = PropertiesService.getScriptProperties();
+  var id = latestGroupId_();
+  var before = parseDestinations(props.getProperty('LINE_TO'));
+  if (before.indexOf(id) !== -1) {
+    throw new Error('このグループはすでに送信先に入っています。新しいグループで1通送ってから、もう一度実行してください。');
+  }
+  props.setProperty('LINE_TO', addDestination(props.getProperty('LINE_TO'), id));
+  pushLine_('このグループにも、毎朝の制作期限を送ります。', id);
+  Logger.log('送信先は' + (before.length + 1) + 'か所になりました。');
 }
 
 function todayString_() {
@@ -350,26 +385,38 @@ function readTasks_() {
   return parseRows(sheet.getDataRange().getDisplayValues(), todayString_());
 }
 
-/** メッセージの配列をLINEへ送り、HTTPの応答を返す。 */
-function pushMessages_(messages) {
-  var props = PropertiesService.getScriptProperties();
+function lineToken_() {
   // 貼り付け時に紛れた空白・改行・先頭の「Bearer 」を取り除く
-  var token = String(props.getProperty('LINE_TOKEN') || '').replace(/\s+/g, '').replace(/^Bearer/i, '');
-  var to = String(props.getProperty('LINE_TO') || '').replace(/\s+/g, '');
-  if (!token || !to) throw new Error('スクリプト プロパティに LINE_TOKEN と LINE_TO を設定してください。');
+  var token = String(PropertiesService.getScriptProperties().getProperty('LINE_TOKEN') || '')
+    .replace(/\s+/g, '').replace(/^Bearer/i, '');
+  if (!token) throw new Error('スクリプト プロパティに LINE_TOKEN を設定してください。');
+  return token;
+}
+
+function destinations_() {
+  var list = parseDestinations(PropertiesService.getScriptProperties().getProperty('LINE_TO'));
+  if (!list.length) throw new Error('スクリプト プロパティの LINE_TO に送信先がありません。');
+  return list;
+}
+
+/** 1つの送信先へメッセージの配列を送り、HTTPの応答を返す。 */
+function pushTo_(to, messages) {
   return UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
     method: 'post',
     contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + token },
+    headers: { Authorization: 'Bearer ' + lineToken_() },
     payload: JSON.stringify({ to: to, messages: messages }),
     muteHttpExceptions: true
   });
 }
 
-function pushLine_(text) {
-  var res = pushMessages_([{ type: 'text', text: text }]);
-  var code = res.getResponseCode();
-  if (code !== 200) throw new Error('LINEへの送信に失敗しました（' + code + '）：' + res.getContentText());
+/** 文字だけのメッセージを送る。to を省くと、登録済みの送信先すべてに送る。 */
+function pushLine_(text, to) {
+  (to ? [to] : destinations_()).forEach(function (dest) {
+    var res = pushTo_(dest, [{ type: 'text', text: text }]);
+    var code = res.getResponseCode();
+    if (code !== 200) throw new Error('LINEへの送信に失敗しました（' + code + '）：' + res.getContentText());
+  });
 }
 
 /**
@@ -380,13 +427,14 @@ function checkSettings() {
   Logger.log('登録されているプロパティ名: ' + Object.keys(props).map(function (k) { return '「' + k + '」'; }).join(' '));
   var rawToken = String(props.LINE_TOKEN || '');
   var token = rawToken.replace(/\s+/g, '').replace(/^Bearer/i, '');
-  var to = String(props.LINE_TO || '').replace(/\s+/g, '');
+  var dests = parseDestinations(props.LINE_TO);
   Logger.log('LINE_TOKEN: ' + rawToken.length + '文字（空白などを除くと' + token.length + '文字）。' +
     (token.length === 32 ? '32文字はChannel secretの長さです。' :
      token.length === 33 && /^[UCR]/.test(token) ? 'ユーザーIDの形です。LINE_TOと入れ違いの可能性があります。' :
      token.length < 100 ? '長期トークンは170文字前後なので短すぎます。' : '長さは長期トークンとして妥当です。'));
-  Logger.log('LINE_TO: ' + to.length + '文字。' +
-    (/^[UCR][0-9a-f]{32}$/.test(to) ? '形は正しいです（' + to.charAt(0) + 'で始まる33文字）。' : 'U・C・Rのどれかで始まる33文字ではありません。'));
+  Logger.log('LINE_TO: 送信先' + dests.length + 'か所' +
+    (dests.length ? '（' + dests.map(function (d) { return ({ U: '個人', C: 'グループ', R: '複数人トーク' })[d.charAt(0)]; }).join('、') + '）。' :
+     '。U・C・Rのどれかで始まる33文字のIDが入っていません。'));
   if (!token) return;
   var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/info', {
     headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true
@@ -404,11 +452,16 @@ function sendMorningDigest() {
   var pageUrl = PropertiesService.getScriptProperties().getProperty('PAGE_URL') || '';
   var tasks = readTasks_(), today = todayString_();
   var flex = buildFlexMessage(tasks, today, { page: pageUrl });
-  var res = pushMessages_([flex]);
-  if (res.getResponseCode() === 200) return;
-  // カード形式が通らなかったときは、理由をログに残して文字だけの通知を送る
-  Logger.log('カード形式で送れませんでした（' + res.getResponseCode() + '）：' + res.getContentText());
-  pushLine_(buildMorningMessage(tasks, today, pageUrl));
+  var errors = [];
+  destinations_().forEach(function (to, i) {
+    var res = pushTo_(to, [flex]);
+    if (res.getResponseCode() === 200) return;
+    // カード形式が通らなかった送信先には、理由をログに残して文字だけの通知を送る
+    Logger.log((i + 1) + 'か所目：カード形式で送れませんでした（' + res.getResponseCode() + '）：' + res.getContentText());
+    try { pushLine_(buildMorningMessage(tasks, today, pageUrl), to); }
+    catch (err) { errors.push((i + 1) + 'か所目：' + err.message); }
+  });
+  if (errors.length) throw new Error(errors.join('\n'));
 }
 
 /** 毎朝の通知を登録する。何度実行しても通知は1日1回のまま。 */
@@ -433,6 +486,7 @@ function onOpen() {
     .addItem('毎朝' + SEND_HOUR + '時の通知を登録する', 'setup')
     .addItem('毎朝の通知を止める', 'stopDigest')
     .addItem('送信先をグループに切り替える', 'useGroup')
+    .addItem('送信先にグループを追加する', 'addGroup')
     .addToUi();
 }
 
@@ -460,6 +514,6 @@ if (typeof module !== 'undefined') {
     normalizeDate: normalizeDate, normalizeTime: normalizeTime, addDays: addDays,
     formatShort: formatShort, parseRows: parseRows, classify: classify,
     buildMorningMessage: buildMorningMessage, buildFlexMessage: buildFlexMessage,
-    extractGroupId: extractGroupId
+    extractGroupId: extractGroupId, parseDestinations: parseDestinations, addDestination: addDestination
   };
 }
