@@ -68,12 +68,27 @@
 
 `index.html` や `Code.gs` をあとで書き換えたときは、「デプロイを管理」→ 鉛筆 → バージョン「新バージョン」で更新します。
 
+### 5. 送信先をグループにする（任意）
+
+グループに送るには、そのグループのID（`C` で始まる文字列）が必要です。IDはLINEアプリの画面には出ないので、botがグループに入ったときにLINEから届く通知（Webhook）で受け取ります（[グループIDの説明](https://developers.line.biz/ja/docs/messaging-api/group-chats/)）。
+
+1. [LINE Official Account Manager](https://manager.line.biz/) の「設定」→「アカウント設定」で、「グループ・複数人トークへの参加を許可する」を選びます。初期設定は「許可しない」です。
+2. 手順4のウェブアプリを、アクセスできるユーザー「全員」でデプロイします。LINEのサーバーはログインできないため、「自分のみ」では通知が届きません。URLは `https://script.google.com/macros/s/…/exec` の形です。
+3. [LINE Developersコンソール](https://developers.line.biz/console/) の「Messaging API設定」で、Webhook URLに手順2のURLを入れ、「Webhookの利用」をオンにします。「検証」ボタンはApps Scriptの仕様で302エラーと表示されることがありますが、通知自体は届きます。
+4. LINEアプリで、送りたいグループにbotを招待します。招待後、グループで何か1通送ります。
+5. Apps Scriptのスクリプト プロパティに `LINE_GROUP_ID` が増えていることを確認します。
+6. 関数 `useGroup` を実行します。グループに「このグループに、毎朝の制作期限を送ります。」と届けば切り替え完了です。
+7. グループIDは変わらないので、閲覧ページを公開したくない場合は、デプロイのアクセスを「自分のみ」に戻し、Webhookの利用をオフにします。
+
+Webhookで届いたIDは `LINE_GROUP_ID` に控えるだけで、送信先（`LINE_TO`）は `useGroup` を手で実行するまで変わりません。
+
 ## 変更したいとき
 
 | やりたいこと | 変える場所 |
 |---|---|
 | 送信時刻を変える | `Code.gs` の `SEND_HOUR` を変えて `setup` を実行し直す |
-| 送信先をグループにする | botをグループに招待し、`LINE_TO` をグループID（`C` で始まる）に変える。グループIDはWebhookで受け取る必要があり、いまのコードには取得機能がありません |
+| 送信先をグループにする | 導入手順の5 |
+| 送信先を個人に戻す | `LINE_TO` を自分のユーザーID（`U` で始まる）に書き戻す |
 | 通知に出さない状態を増やす | `Code.gs` の `CLOSED_STATUSES` |
 
 ## 料金の目安

@@ -94,3 +94,19 @@ test('5000文字を超えない', () => {
   const text = gas.buildMorningMessage(gas.parseRows(values, '2026-11-15'), '2026-11-15', '');
   assert.ok(text.length <= 5000);
 });
+
+test('Webhookの本文からグループIDを取り出す', () => {
+  const gid = 'C' + 'a1b2c3d4'.repeat(4);
+  const join = JSON.stringify({ events: [{ type: 'join', source: { type: 'group', groupId: gid } }] });
+  assert.equal(gas.extractGroupId(join), gid);
+  const mixed = JSON.stringify({ events: [
+    { type: 'message', source: { type: 'user', userId: 'U' + '0'.repeat(32) } },
+    { type: 'message', source: { type: 'group', groupId: gid, userId: 'U' + '0'.repeat(32) } }
+  ] });
+  assert.equal(gas.extractGroupId(mixed), gid);
+  // 個人トーク、検証用の空イベント、壊れた本文、形の違うIDは無視する
+  assert.equal(gas.extractGroupId(JSON.stringify({ events: [{ source: { type: 'user', userId: 'U' + '0'.repeat(32) } }] })), '');
+  assert.equal(gas.extractGroupId(JSON.stringify({ events: [] })), '');
+  assert.equal(gas.extractGroupId('not json'), '');
+  assert.equal(gas.extractGroupId(JSON.stringify({ events: [{ source: { type: 'group', groupId: 'https://example.com' } }] })), '');
+});

@@ -197,7 +197,46 @@ function buildMorningMessage(tasks, today, pageUrl) {
   return text;
 }
 
+/* ---------- グループIDの受け取り ---------- */
+
+/**
+ * LINEから届いたWebhookの本文（JSON文字列）から、グループIDまたはルームIDを1つ取り出す。
+ * botがグループに参加したとき、またはグループ内で誰かが発言したときの通知に入っている。
+ */
+function extractGroupId(bodyText) {
+  var body;
+  try { body = JSON.parse(bodyText); } catch (err) { return ''; }
+  var events = body && body.events;
+  if (!events || !events.length) return '';
+  for (var i = 0; i < events.length; i++) {
+    var src = events[i] && events[i].source;
+    if (!src) continue;
+    var id = src.type === 'group' ? src.groupId : (src.type === 'room' ? src.roomId : '');
+    if (/^[CR][0-9a-f]{32}$/.test(String(id || ''))) return id;
+  }
+  return '';
+}
+
 /* ---------- ここから下はApps Scriptの機能を使う ---------- */
+
+/**
+ * LINEのWebhookの受け口。グループIDを LINE_GROUP_ID に控えるだけで、送信先は変えない。
+ * 送信先の切り替えは useGroup() を手で実行したときだけ行う。
+ */
+function doPost(e) {
+  var id = extractGroupId(e && e.postData ? e.postData.contents : '');
+  if (id) PropertiesService.getScriptProperties().setProperty('LINE_GROUP_ID', id);
+  return ContentService.createTextOutput('ok');
+}
+
+/** 控えておいたグループを送信先にして、確認の1通を送る。 */
+function useGroup() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('LINE_GROUP_ID');
+  if (!id) throw new Error('グループIDをまだ受け取っていません。botをグループに招待し、グループで何か1通送ってから実行してください。');
+  props.setProperty('LINE_TO', id);
+  pushLine_('このグループに、毎朝の制作期限を送ります。');
+}
 
 function todayString_() {
   return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
@@ -252,6 +291,7 @@ function onOpen() {
     .addItem('今すぐLINEに送る', 'sendMorningDigest')
     .addItem('毎朝' + SEND_HOUR + '時の通知を登録する', 'setup')
     .addItem('毎朝の通知を止める', 'stopDigest')
+    .addItem('送信先をグループに切り替える', 'useGroup')
     .addToUi();
 }
 
@@ -278,6 +318,6 @@ if (typeof module !== 'undefined') {
   module.exports = {
     normalizeDate: normalizeDate, normalizeTime: normalizeTime, addDays: addDays,
     formatShort: formatShort, parseRows: parseRows, classify: classify,
-    buildMorningMessage: buildMorningMessage
+    buildMorningMessage: buildMorningMessage, extractGroupId: extractGroupId
   };
 }
