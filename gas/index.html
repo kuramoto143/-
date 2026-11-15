@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base target="_blank">
+<title>ROBIN 制作管理</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #111c2e; --sub: #5b6577; --line: #e1e4ea;
+    --brand: #111c2e; --brand-ink: #ffffff;
+    --red: #b3261e; --red-bg: #fdecea; --amber: #8a5a00; --amber-bg: #fff3d6;
+    --blue: #1d4ed8; --blue-bg: #e6edff; --green: #17663a; --green-bg: #e3f4ea;
+    --gray: #5b6577; --gray-bg: #eceef2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1420; --panel: #162033; --ink: #eef1f6; --sub: #9aa5b8; --line: #2a3650;
+      --brand: #0a101b; --brand-ink: #ffffff;
+      --red: #ff9b93; --red-bg: #45201d; --amber: #ffd27a; --amber-bg: #40300f;
+      --blue: #a9c0ff; --blue-bg: #1c2c55; --green: #8fdcae; --green-bg: #173a27;
+      --gray: #9aa5b8; --gray-bg: #232e45;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif; }
+  header { background: var(--brand); color: var(--brand-ink); padding: 16px; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 16px; }
+  .head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .head h1 { font-size: 18px; margin: 0; letter-spacing: .04em; }
+  .head .date { font-size: 15px; opacity: .85; }
+  .head .spacer { flex: 1; }
+  .btn { font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.35);
+    background: transparent; color: inherit; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .btn:hover { background: rgba(255,255,255,.12); }
+  main { padding: 16px 0 48px; }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+    text-decoration: none; color: inherit; display: block; }
+  .tile b { display: block; font-size: 26px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .tile span { font-size: 12px; color: var(--sub); }
+  .tile.red b { color: var(--red); } .tile.amber b { color: var(--amber); }
+  .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 16px 0 4px; }
+  .seg { display: inline-flex; background: var(--gray-bg); border-radius: 8px; padding: 3px; }
+  .seg button { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--sub);
+    padding: 5px 12px; border-radius: 6px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); font-weight: 600; }
+  select { font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); }
+  h2 { font-size: 14px; margin: 24px 0 8px; display: flex; align-items: baseline; gap: 8px; }
+  h2 small { font-weight: 400; color: var(--sub); font-size: 12px; }
+  h2.red { color: var(--red); }
+  .list { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .task { display: grid; grid-template-columns: 84px 1fr auto; gap: 10px; padding: 10px 12px; align-items: start;
+    border-top: 1px solid var(--line); }
+  .task:first-child { border-top: 0; }
+  .when { font-size: 13px; color: var(--sub); font-variant-numeric: tabular-nums; }
+  .when b { display: block; color: var(--ink); font-size: 15px; }
+  .when.late b { color: var(--red); }
+  .name { font-weight: 600; overflow-wrap: anywhere; }
+  .proj { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+    background: var(--gray-bg); color: var(--gray); margin-right: 6px; vertical-align: 2px; }
+  .work { color: var(--sub); font-weight: 400; margin-left: 6px; }
+  .memo { font-size: 12.5px; color: var(--sub); margin-top: 2px; overflow-wrap: anywhere; }
+  .memo a { color: var(--blue); }
+  .side { text-align: right; font-size: 12px; color: var(--sub); white-space: nowrap; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; margin-bottom: 2px; }
+  .s-未着手 { background: var(--gray-bg); color: var(--gray); }
+  .s-作業中 { background: var(--blue-bg); color: var(--blue); }
+  .s-確認待ち { background: var(--amber-bg); color: var(--amber); }
+  .s-完了 { background: var(--green-bg); color: var(--green); }
+  .s-保留 { background: var(--gray-bg); color: var(--gray); }
+  .empty { padding: 14px 12px; color: var(--sub); font-size: 13px; }
+  .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .day { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; min-height: 72px; }
+  .day.now { border-color: var(--ink); }
+  .day .d { font-size: 12px; color: var(--sub); }
+  .day .p { font-size: 12px; font-weight: 600; margin-top: 4px; overflow-wrap: anywhere; line-height: 1.35; }
+  details { margin-top: 24px; }
+  summary { cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .msg { padding: 32px 0; color: var(--sub); text-align: center; }
+  .msg.err { color: var(--red); }
+  @media (max-width: 640px) {
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .task { grid-template-columns: 62px 1fr; }
+    .side { grid-column: 2; text-align: left; display: flex; gap: 8px; align-items: center; }
+    .badge { margin-bottom: 0; }
+    .week { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<header><div class="wrap head">
+  <h1>ROBIN 制作管理</h1><span class="date" id="date"></span><span class="spacer"></span>
+  <button class="btn" id="reload" type="button">再読み込み</button>
+  <a class="btn" id="sheet" href="#" hidden>シートを開いて編集</a>
+</div></header>
+<main><div class="wrap" id="app"><p class="msg">読み込み中です。</p></div></main>
+
+<script>
+(function () {
+  'use strict';
+  var WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+  var CLOSED = ['完了', '保留'];
+  var state = { data: null, owner: 'すべて', project: 'すべて' };
+  var app = document.getElementById('app');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function toDate(ymd) { var p = ymd.split('-'); return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])); }
+  function addDays(ymd, n) {
+    var d = toDate(ymd); d.setUTCDate(d.getUTCDate() + n);
+    return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+  }
+  function short(ymd) { var d = toDate(ymd); return (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + '(' + WEEKDAYS[d.getUTCDay()] + ')'; }
+  function safeUrl(u) { return /^https?:\/\//i.test(u) ? u : ''; }
+  function uniq(list) { return list.filter(function (v, i) { return v && list.indexOf(v) === i; }); }
+  function sortTasks(a, b) {
+    if (a.due !== b.due) return a.due < b.due ? -1 : 1;
+    var ta = a.time || '99:99', tb = b.time || '99:99';
+    return ta === tb ? a.row - b.row : (ta < tb ? -1 : 1);
+  }
+
+  function taskHtml(t, today, showDate) {
+    var late = t.due && t.due < today && CLOSED.indexOf(t.status) === -1;
+    var when = '';
+    if (showDate && t.due) when = '<b>' + esc(short(t.due)) + '</b>' + esc(t.time);
+    else if (t.time) when = '<b>' + esc(t.time) + '</b>';
+    else when = t.due ? '終日' : '未設定';
+    var link = safeUrl(t.link);
+    return '<div class="task"><div class="when' + (late ? ' late' : '') + '">' + when + '</div>' +
+      '<div><div class="name"><span class="proj">' + esc(t.project) + '</span>' + esc(t.title || '（内容未記入）') +
+      (t.work && t.work !== 'その他' ? '<span class="work">' + esc(t.work) + '</span>' : '') + '</div>' +
+      (t.memo || link ? '<div class="memo">' + esc(t.memo) + (link ? (t.memo ? ' ' : '') + '<a href="' + esc(link) + '" rel="noopener">リンクを開く</a>' : '') + '</div>' : '') +
+      '</div><div class="side"><span class="badge s-' + esc(t.status) + '">' + esc(t.status) + '</span><br>' + esc(t.owner) + '</div></div>';
+  }
+
+  function sectionHtml(id, title, note, list, today, showDate, cls, emptyText) {
+    var body = list.length
+      ? list.map(function (t) { return taskHtml(t, today, showDate); }).join('')
+      : '<div class="empty">' + esc(emptyText) + '</div>';
+    return '<h2 id="' + id + '"' + (cls ? ' class="' + cls + '"' : '') + '>' + esc(title) +
+      '<small>' + list.length + '件' + (note ? '　' + esc(note) : '') + '</small></h2><div class="list">' + body + '</div>';
+  }
+
+  function render() {
+    var d = state.data, today = d.today, tomorrow = addDays(today, 1);
+    document.getElementById('date').textContent = short(today) + '　' + d.loadedAt + ' 時点';
+    var sheet = document.getElementById('sheet');
+    if (safeUrl(d.sheetUrl)) { sheet.href = d.sheetUrl; sheet.hidden = false; }
+
+    var owners = ['すべて'].concat(uniq(d.tasks.map(function (t) { return t.owner; })));
+    var projects = ['すべて'].concat(uniq(d.tasks.map(function (t) { return t.project; })));
+    var tasks = d.tasks.filter(function (t) {
+      return (state.owner === 'すべて' || t.owner === state.owner) &&
+             (state.project === 'すべて' || t.project === state.project);
+    });
+    var open = tasks.filter(function (t) { return CLOSED.indexOf(t.status) === -1; });
+    var g = { overdue: [], today: [], tomorrow: [], later: [], noDue: [] };
+    open.forEach(function (t) {
+      if (!t.due) g.noDue.push(t);
+      else if (t.due < today) g.overdue.push(t);
+      else if (t.due === today) g.today.push(t);
+      else if (t.due === tomorrow) g.tomorrow.push(t);
+      else g.later.push(t);
+    });
+    ['overdue', 'today', 'tomorrow', 'later'].forEach(function (k) { g[k].sort(sortTasks); });
+    var held = tasks.filter(function (t) { return t.status === '保留'; });
+    var done = tasks.filter(function (t) { return t.status === '完了'; }).sort(sortTasks).reverse();
+
+    var html = '<div class="tiles">' +
+      '<a class="tile' + (g.overdue.length ? ' red' : '') + '" href="#overdue" target="_self"><b>' + g.overdue.length + '</b><span>期限切れ</span></a>' +
+      '<a class="tile' + (g.today.length ? ' amber' : '') + '" href="#today" target="_self"><b>' + g.today.length + '</b><span>今日が期限</span></a>' +
+      '<a class="tile" href="#tomorrow" target="_self"><b>' + g.tomorrow.length + '</b><span>明日が期限</span></a>' +
+      '<a class="tile" href="#nodue" target="_self"><b>' + g.noDue.length + '</b><span>期限未設定</span></a></div>';
+
+    html += '<div class="filters"><div class="seg" role="group" aria-label="担当">' + owners.map(function (o) {
+      return '<button type="button" data-owner="' + esc(o) + '" aria-pressed="' + (o === state.owner) + '">' + esc(o) + '</button>';
+    }).join('') + '</div><select id="project" aria-label="案件">' + projects.map(function (p) {
+      return '<option' + (p === state.project ? ' selected' : '') + '>' + esc(p) + '</option>';
+    }).join('') + '</select></div>';
+
+    if (g.overdue.length) html += sectionHtml('overdue', '期限切れ', '', g.overdue, today, true, 'red', '');
+    else html += '<span id="overdue"></span>';
+    html += sectionHtml('today', '今日が期限', short(today), g.today, today, false, '', '今日が期限のものはありません。');
+    html += sectionHtml('tomorrow', '明日が期限', short(tomorrow), g.tomorrow, today, false, '', '明日が期限のものはありません。');
+
+    // 今日から7日間の投稿予定
+    var posts = {};
+    tasks.forEach(function (t) {
+      if (!t.postDate || t.status === '保留') return;
+      var key = t.project + (t.title ? '／' + t.title : '');
+      (posts[t.postDate] = posts[t.postDate] || []);
+      if (posts[t.postDate].indexOf(key) === -1) posts[t.postDate].push(key);
+    });
+    html += '<h2>投稿予定<small>今日から7日間</small></h2><div class="week">';
+    for (var i = 0; i < 7; i++) {
+      var day = addDays(today, i);
+      html += '<div class="day' + (i === 0 ? ' now' : '') + '"><div class="d">' + esc(short(day)) + '</div>' +
+        (posts[day] || []).map(function (p) { return '<div class="p">' + esc(p) + '</div>'; }).join('') + '</div>';
+    }
+    html += '</div>';
+
+    if (g.later.length) html += sectionHtml('later', '明後日以降', '', g.later, today, true, '', '');
+    html += sectionHtml('nodue', '期限未設定', '期限日が空欄の行', g.noDue, today, false, '', '期限未設定のものはありません。');
+    if (held.length) html += '<details><summary>保留（' + held.length + '件）</summary><div class="list">' +
+      held.map(function (t) { return taskHtml(t, today, true); }).join('') + '</div></details>';
+    if (done.length) html += '<details><summary>完了（' + done.length + '件）</summary><div class="list">' +
+      done.map(function (t) { return taskHtml(t, today, true); }).join('') + '</div></details>';
+
+    app.innerHTML = html;
+  }
+
+  app.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-owner]');
+    if (b) { state.owner = b.getAttribute('data-owner'); render(); }
+  });
+  app.addEventListener('change', function (e) {
+    if (e.target.id === 'project') { state.project = e.target.value; render(); }
+  });
+
+  function fail(message) {
+    app.innerHTML = '<p class="msg err">読み込めませんでした。' + esc(message) + '</p>';
+  }
+  function load() {
+    if (window.google && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(function (data) { state.data = data; render(); })
+        .withFailureHandler(function (err) { fail(err && err.message ? err.message : ''); })
+        .getData();
+    } else if (window.__MOCK__) {
+      state.data = window.__MOCK__; render();
+    } else {
+      fail('Apps Scriptのウェブアプリとして開いてください。');
+    }
+  }
+  document.getElementById('reload').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>
