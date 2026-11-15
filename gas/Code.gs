@@ -265,6 +265,33 @@ function pushLine_(text) {
   if (code !== 200) throw new Error('LINEへの送信に失敗しました（' + code + '）：' + res.getContentText());
 }
 
+/**
+ * 設定の点検。値そのものは表示せず、長さと形、LINEに通るかどうかだけをログに出す。
+ */
+function checkSettings() {
+  var props = PropertiesService.getScriptProperties().getProperties();
+  Logger.log('登録されているプロパティ名: ' + Object.keys(props).map(function (k) { return '「' + k + '」'; }).join(' '));
+  var rawToken = String(props.LINE_TOKEN || '');
+  var token = rawToken.replace(/\s+/g, '').replace(/^Bearer/i, '');
+  var to = String(props.LINE_TO || '').replace(/\s+/g, '');
+  Logger.log('LINE_TOKEN: ' + rawToken.length + '文字（空白などを除くと' + token.length + '文字）。' +
+    (token.length === 32 ? '32文字はChannel secretの長さです。' :
+     token.length === 33 && /^[UCR]/.test(token) ? 'ユーザーIDの形です。LINE_TOと入れ違いの可能性があります。' :
+     token.length < 100 ? '長期トークンは170文字前後なので短すぎます。' : '長さは長期トークンとして妥当です。'));
+  Logger.log('LINE_TO: ' + to.length + '文字。' +
+    (/^[UCR][0-9a-f]{32}$/.test(to) ? '形は正しいです（' + to.charAt(0) + 'で始まる33文字）。' : 'U・C・Rのどれかで始まる33文字ではありません。'));
+  if (!token) return;
+  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/info', {
+    headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true
+  });
+  if (res.getResponseCode() === 200) {
+    var info = JSON.parse(res.getContentText());
+    Logger.log('トークンは有効です。アカウント: ' + info.displayName + '（' + info.basicId + '）');
+  } else {
+    Logger.log('トークンは無効です（' + res.getResponseCode() + '）: ' + res.getContentText());
+  }
+}
+
 /** 毎朝のトリガーから呼ばれる。手動で実行すると、その場で1通送る。 */
 function sendMorningDigest() {
   var pageUrl = PropertiesService.getScriptProperties().getProperty('PAGE_URL') || '';
