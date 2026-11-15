@@ -250,8 +250,9 @@ function readTasks_() {
 
 function pushLine_(text) {
   var props = PropertiesService.getScriptProperties();
-  var token = props.getProperty('LINE_TOKEN');
-  var to = props.getProperty('LINE_TO');
+  // 貼り付け時に紛れた空白・改行・先頭の「Bearer 」を取り除く
+  var token = String(props.getProperty('LINE_TOKEN') || '').replace(/\s+/g, '').replace(/^Bearer/i, '');
+  var to = String(props.getProperty('LINE_TO') || '').replace(/\s+/g, '');
   if (!token || !to) throw new Error('スクリプト プロパティに LINE_TOKEN と LINE_TO を設定してください。');
   var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
     method: 'post',
