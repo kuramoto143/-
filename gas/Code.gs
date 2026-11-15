@@ -197,6 +197,112 @@ function buildMorningMessage(tasks, today, pageUrl) {
   return text;
 }
 
+/* ---------- LINEに送るカード（Flex Message） ---------- */
+
+var ME = '倉本'; // この担当を各区分の先頭に出す
+var FLEX_MAX_ROWS = 30; // カードに載せる行数の上限（LINEの容量制限に収めるため）
+var FX = { ink: '#111C2E', sub: '#8A93A3', line: '#E6E9EE', red: '#C0392B', amber: '#B26A00', blue: '#1D4ED8', green: '#17663A' };
+var STATUS_COLORS = { '未着手': FX.sub, '作業中': FX.blue, '確認待ち': FX.amber, '完了': FX.green, '保留': FX.sub };
+
+function fxText(text, opts) {
+  var t = { type: 'text', text: String(text == null || text === '' ? ' ' : text) };
+  Object.keys(opts || {}).forEach(function (k) { t[k] = opts[k]; });
+  return t;
+}
+
+function fxRow(t, showDate) {
+  var when = showDate ? formatShort(t.due).replace(/\(.\)$/, '') : (t.time || '終日');
+  var strong = showDate || !!t.time;
+  var title = t.title || t.project;
+  var subParts = [];
+  if (t.title) subParts.push(t.project);
+  if (t.work && t.work !== 'その他') subParts.push(t.work);
+  var middle = [fxText(title, { size: 'sm', weight: 'bold', color: FX.ink, wrap: true })];
+  if (subParts.length) middle.push(fxText(subParts.join('・'), { size: 'xs', color: FX.sub, wrap: true }));
+  return {
+    type: 'box', layout: 'horizontal', spacing: 'md', margin: 'md',
+    contents: [
+      { type: 'box', layout: 'vertical', width: '44px', flex: 0,
+        contents: [fxText(when, { size: 'sm', weight: strong ? 'bold' : 'regular', color: showDate ? FX.red : (strong ? FX.ink : FX.sub) })] },
+      { type: 'box', layout: 'vertical', flex: 1, contents: middle },
+      fxText(t.status, { size: 'xs', weight: 'bold', color: STATUS_COLORS[t.status] || FX.sub, flex: 0, align: 'end' })
+    ]
+  };
+}
+
+/** 毎朝の通知をカード形式で作る。urls は { sheet, page }。 */
+function buildFlexMessage(tasks, today, urls) {
+  urls = urls || {};
+  var c = classify(tasks, today);
+  var sections = [
+    { title: '期限切れ', list: c.overdue, color: FX.red, showDate: true },
+    { title: '今日が期限', list: c.today, color: FX.ink, showDate: false },
+    { title: '明日が期限', list: c.tomorrow, color: FX.sub, showDate: false }
+  ].filter(function (s) { return s.list.length; });
+
+  var body = [], rows = 0, omitted = 0;
+  sections.forEach(function (s, i) {
+    if (i > 0) body.push({ type: 'separator', margin: 'xl', color: FX.line });
+    body.push({
+      type: 'box', layout: 'baseline', margin: i > 0 ? 'xl' : 'none', spacing: 'sm',
+      contents: [
+        fxText(s.title, { size: 'md', weight: 'bold', color: s.color, flex: 0 }),
+        fxText(s.list.length + '件', { size: 'xs', color: FX.sub, flex: 0 })
+      ]
+    });
+    var groups = groupByOwner(s.list);
+    groups.sort(function (a, b) { return (a.owner === ME ? 0 : 1) - (b.owner === ME ? 0 : 1); });
+    groups.forEach(function (g) {
+      body.push(fxText(g.owner + '　' + g.tasks.length + '件', { size: 'xs', weight: 'bold', color: FX.sub, margin: 'lg' }));
+      g.tasks.forEach(function (t) {
+        if (rows >= FLEX_MAX_ROWS) { omitted++; return; }
+        rows++;
+        body.push(fxRow(t, s.showDate));
+      });
+    });
+  });
+  if (!sections.length) {
+    body.push(fxText('期限切れ、今日が期限、明日が期限のものはありません。', { size: 'sm', color: FX.ink, wrap: true }));
+  }
+
+  var notes = [];
+  if (omitted) notes.push('ほか' + omitted + '件はシートで確認');
+  if (c.noDue.length) notes.push('期限未設定 ' + c.noDue.length + '件');
+  var unreadable = tasks.filter(function (t) { return t.dueUnreadable; });
+  if (unreadable.length) notes.push('期限日を読めない行 ' + unreadable.map(function (t) { return t.row + '行目'; }).join('、'));
+  if (notes.length) {
+    body.push({ type: 'separator', margin: 'xl', color: FX.line });
+    body.push(fxText(notes.join('　／　'), { size: 'xs', color: FX.sub, wrap: true, margin: 'lg' }));
+  }
+
+  var bubble = {
+    type: 'bubble', size: 'mega',
+    header: {
+      type: 'box', layout: 'vertical', backgroundColor: FX.ink, paddingAll: '16px',
+      contents: [
+        fxText('制作の期限', { size: 'xs', color: '#B8C0CC' }),
+        fxText(formatShort(today), { size: 'xl', weight: 'bold', color: '#FFFFFF' })
+      ]
+    },
+    body: { type: 'box', layout: 'vertical', paddingAll: '16px', contents: body }
+  };
+  var buttons = [];
+  if (/^https:\/\//.test(urls.sheet || '')) {
+    buttons.push({ type: 'button', style: 'primary', color: FX.ink, height: 'sm',
+      action: { type: 'uri', label: 'シートを開いて更新', uri: urls.sheet } });
+  }
+  if (/^https:\/\//.test(urls.page || '')) {
+    buttons.push({ type: 'button', style: 'secondary', height: 'sm',
+      action: { type: 'uri', label: '一覧ページを開く', uri: urls.page } });
+  }
+  if (buttons.length) bubble.footer = { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: buttons };
+
+  // 通知とトーク一覧に出る1行
+  var counts = sections.map(function (s) { return s.title.replace('が期限', '') + s.list.length + '件'; });
+  var alt = '制作の期限 ' + formatShort(today) + '：' + (counts.length ? counts.join('・') : '該当なし');
+  return { type: 'flex', altText: alt.slice(0, 400), contents: bubble };
+}
+
 /* ---------- グループIDの受け取り ---------- */
 
 /**
@@ -248,19 +354,24 @@ function readTasks_() {
   return parseRows(sheet.getDataRange().getDisplayValues(), todayString_());
 }
 
-function pushLine_(text) {
+/** メッセージの配列をLINEへ送り、HTTPの応答を返す。 */
+function pushMessages_(messages) {
   var props = PropertiesService.getScriptProperties();
   // 貼り付け時に紛れた空白・改行・先頭の「Bearer 」を取り除く
   var token = String(props.getProperty('LINE_TOKEN') || '').replace(/\s+/g, '').replace(/^Bearer/i, '');
   var to = String(props.getProperty('LINE_TO') || '').replace(/\s+/g, '');
   if (!token || !to) throw new Error('スクリプト プロパティに LINE_TOKEN と LINE_TO を設定してください。');
-  var res = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+  return UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + token },
-    payload: JSON.stringify({ to: to, messages: [{ type: 'text', text: text }] }),
+    payload: JSON.stringify({ to: to, messages: messages }),
     muteHttpExceptions: true
   });
+}
+
+function pushLine_(text) {
+  var res = pushMessages_([{ type: 'text', text: text }]);
   var code = res.getResponseCode();
   if (code !== 200) throw new Error('LINEへの送信に失敗しました（' + code + '）：' + res.getContentText());
 }
@@ -295,7 +406,13 @@ function checkSettings() {
 /** 毎朝のトリガーから呼ばれる。手動で実行すると、その場で1通送る。 */
 function sendMorningDigest() {
   var pageUrl = PropertiesService.getScriptProperties().getProperty('PAGE_URL') || '';
-  pushLine_(buildMorningMessage(readTasks_(), todayString_(), pageUrl));
+  var tasks = readTasks_(), today = todayString_();
+  var flex = buildFlexMessage(tasks, today, { sheet: SpreadsheetApp.getActive().getUrl(), page: pageUrl });
+  var res = pushMessages_([flex]);
+  if (res.getResponseCode() === 200) return;
+  // カード形式が通らなかったときは、理由をログに残して文字だけの通知を送る
+  Logger.log('カード形式で送れませんでした（' + res.getResponseCode() + '）：' + res.getContentText());
+  pushLine_(buildMorningMessage(tasks, today, pageUrl));
 }
 
 /** 毎朝の通知を登録する。何度実行しても通知は1日1回のまま。 */
@@ -346,6 +463,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     normalizeDate: normalizeDate, normalizeTime: normalizeTime, addDays: addDays,
     formatShort: formatShort, parseRows: parseRows, classify: classify,
-    buildMorningMessage: buildMorningMessage, extractGroupId: extractGroupId
+    buildMorningMessage: buildMorningMessage, buildFlexMessage: buildFlexMessage,
+    extractGroupId: extractGroupId
   };
 }

@@ -110,3 +110,38 @@ test('Webhookの本文からグループIDを取り出す', () => {
   assert.equal(gas.extractGroupId('not json'), '');
   assert.equal(gas.extractGroupId(JSON.stringify({ events: [{ source: { type: 'group', groupId: 'https://example.com' } }] })), '');
 });
+
+test('カード形式：倉本が先、空の文字なし、容量内', () => {
+  const values = [HEADER,
+    row('ケント', 'ちいかわ回', '台本', 'takuma', '2026/11/15', '12:30', '未着手'),
+    row('ケント', 'ちいかわ回', '編集・提出', '倉本', '2026/11/15', '17:00', '未着手'),
+    row('管理', '', 'その他', '倉本', '2026/11/15', '', '作業中'),
+    row('ろびん', '最強主人公', '編集・提出', '倉本', '2026/11/16', '', '作業中'),
+    row('一期一会', 'DQ5', '修正', '倉本', '', '', '作業中')
+  ];
+  const tasks = gas.parseRows(values, '2026-11-15');
+  const msg = gas.buildFlexMessage(tasks, '2026-11-15', { sheet: 'https://docs.google.com/x', page: '' });
+  assert.equal(msg.type, 'flex');
+  assert.equal(msg.altText, '制作の期限 11/15(日)：今日2件・明日1件'.replace('今日2件', '今日3件'));
+  const texts = [];
+  (function walk(n) {
+    if (Array.isArray(n)) return n.forEach(walk);
+    if (n && typeof n === 'object') {
+      if (n.type === 'text') { assert.ok(n.text.length > 0); texts.push(n.text); }
+      Object.values(n).forEach(walk);
+    }
+  })(msg.contents);
+  assert.ok(texts.indexOf('倉本　2件') < texts.indexOf('takuma　1件'));
+  assert.ok(texts.includes('期限未設定 1件'));
+  assert.equal(msg.contents.footer.contents.length, 1);
+
+  const many = [HEADER];
+  for (let i = 0; i < 300; i++) many.push(row('ろびん', '動画' + i, '修正', '倉本', '2026/11/15', '', '作業中'));
+  const big = gas.buildFlexMessage(gas.parseRows(many, '2026-11-15'), '2026-11-15', {});
+  assert.ok(Buffer.byteLength(JSON.stringify(big.contents)) < 30000);
+  assert.ok(JSON.stringify(big).includes('ほか270件はシートで確認'));
+
+  const none = gas.buildFlexMessage([], '2026-11-15', {});
+  assert.equal(none.altText, '制作の期限 11/15(日)：該当なし');
+  assert.equal(none.contents.footer, undefined);
+});
