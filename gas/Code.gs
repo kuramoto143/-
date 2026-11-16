@@ -317,6 +317,11 @@ function addDestination(value, id) {
   return list.join(',');
 }
 
+/** LINE_TO の値から、指定したIDを除いた値を返す。 */
+function removeDestinations(value, ids) {
+  return parseDestinations(value).filter(function (d) { return ids.indexOf(d) === -1; }).join(',');
+}
+
 /* ---------- グループIDの受け取り ---------- */
 
 /**
@@ -373,6 +378,68 @@ function addGroup() {
   props.setProperty('LINE_TO', addDestination(props.getProperty('LINE_TO'), id));
   pushLine_('このグループにも、毎朝の制作期限を送ります。', id);
   Logger.log('送信先は' + (before.length + 1) + 'か所になりました。');
+}
+
+/* ---------- 送信先の確認と一時停止 ---------- */
+
+var RM_KEYWORD = 'Robin Marketing'; // このグループ名を含む送信先を pauseRM / resumeRM の対象にする
+
+/** 送信先のIDから、LINE上の名前を取る。取れなければ種類だけ返す。 */
+function destinationName_(id) {
+  var kind = id.charAt(0);
+  var url = kind === 'C' ? 'https://api.line.me/v2/bot/group/' + id + '/summary'
+          : kind === 'U' ? 'https://api.line.me/v2/bot/profile/' + id : '';
+  if (url) {
+    var res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + lineToken_() }, muteHttpExceptions: true });
+    if (res.getResponseCode() === 200) {
+      var j = JSON.parse(res.getContentText());
+      return j.groupName || j.displayName || '';
+    }
+  }
+  return ({ U: '個人', C: 'グループ', R: '複数人トーク' })[kind] + '（名前を取得できません）';
+}
+
+/** 送信先と一時停止中の送信先を、名前つきでログに出す。 */
+function listDestinations() {
+  var props = PropertiesService.getScriptProperties();
+  var on = parseDestinations(props.getProperty('LINE_TO'));
+  var off = parseDestinations(props.getProperty('LINE_TO_PAUSED'));
+  Logger.log('送信中：' + on.length + 'か所');
+  on.forEach(function (id, i) { Logger.log('  ' + (i + 1) + '. ' + destinationName_(id)); });
+  Logger.log('一時停止中：' + off.length + 'か所');
+  off.forEach(function (id, i) { Logger.log('  ' + (i + 1) + '. ' + destinationName_(id)); });
+}
+
+/** グループ名に RM_KEYWORD を含む送信先を、一時停止に移す。 */
+function pauseRM() {
+  var props = PropertiesService.getScriptProperties();
+  var on = parseDestinations(props.getProperty('LINE_TO'));
+  var hit = on.filter(function (id) { return destinationName_(id).indexOf(RM_KEYWORD) !== -1; });
+  if (!hit.length) {
+    listDestinations();
+    throw new Error('送信先に「' + RM_KEYWORD + '」を含むグループがありません。上のログで送信先の名前を確認してください。');
+  }
+  if (hit.length === on.length) throw new Error('外すと送信先が0か所になるため、止めませんでした。全部止める場合は stopDigest を実行してください。');
+  props.setProperty('LINE_TO', removeDestinations(props.getProperty('LINE_TO'), hit));
+  var paused = props.getProperty('LINE_TO_PAUSED');
+  hit.forEach(function (id) { paused = addDestination(paused, id); });
+  props.setProperty('LINE_TO_PAUSED', paused);
+  Logger.log('一時停止しました：' + hit.map(destinationName_).join('、'));
+  listDestinations();
+}
+
+/** pauseRM で止めた送信先を、送信先に戻す。 */
+function resumeRM() {
+  var props = PropertiesService.getScriptProperties();
+  var off = parseDestinations(props.getProperty('LINE_TO_PAUSED'));
+  var hit = off.filter(function (id) { return destinationName_(id).indexOf(RM_KEYWORD) !== -1; });
+  if (!hit.length) throw new Error('一時停止中の送信先に「' + RM_KEYWORD + '」を含むグループがありません。');
+  var to = props.getProperty('LINE_TO');
+  hit.forEach(function (id) { to = addDestination(to, id); });
+  props.setProperty('LINE_TO', to);
+  props.setProperty('LINE_TO_PAUSED', removeDestinations(props.getProperty('LINE_TO_PAUSED'), hit));
+  Logger.log('再開しました：' + hit.map(destinationName_).join('、'));
+  listDestinations();
 }
 
 function todayString_() {
@@ -487,6 +554,9 @@ function onOpen() {
     .addItem('毎朝の通知を止める', 'stopDigest')
     .addItem('送信先をグループに切り替える', 'useGroup')
     .addItem('送信先にグループを追加する', 'addGroup')
+    .addItem('送信先を確認する', 'listDestinations')
+    .addItem('RMへの送信を止める', 'pauseRM')
+    .addItem('RMへの送信を再開する', 'resumeRM')
     .addToUi();
 }
 
@@ -514,6 +584,7 @@ if (typeof module !== 'undefined') {
     normalizeDate: normalizeDate, normalizeTime: normalizeTime, addDays: addDays,
     formatShort: formatShort, parseRows: parseRows, classify: classify,
     buildMorningMessage: buildMorningMessage, buildFlexMessage: buildFlexMessage,
-    extractGroupId: extractGroupId, parseDestinations: parseDestinations, addDestination: addDestination
+    extractGroupId: extractGroupId, parseDestinations: parseDestinations, addDestination: addDestination,
+    removeDestinations: removeDestinations
   };
 }

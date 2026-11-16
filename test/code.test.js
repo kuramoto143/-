@@ -156,3 +156,10 @@ test('送信先を複数持てる', () => {
   assert.equal(gas.addDestination(a + ',' + b, a), a + ',' + b);
   assert.equal(gas.addDestination('', u), u);
 });
+
+test('送信先からIDを除く', () => {
+  const a = 'C' + 'a'.repeat(32), b = 'C' + 'b'.repeat(32);
+  assert.equal(gas.removeDestinations(a + ',' + b, [b]), a);
+  assert.equal(gas.removeDestinations(a, [b]), a);
+  assert.equal(gas.removeDestinations('', [a]), '');
+});
