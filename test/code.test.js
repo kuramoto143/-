@@ -41,30 +41,28 @@ test('列が足りないときはエラーで知らせる', () => {
   assert.throws(() => gas.parseRows([['案件', '担当']], '2026-11-15'), /列がありません/);
 });
 
-test('期限切れ・今日・明日・未設定に分かれ、完了と保留は外れる', () => {
+test('今日・明日・明後日に分かれ、期限切れ・完了・保留は出ない', () => {
   const values = [HEADER,
     row('ケント', 'ちいかわ回', '台本', 'takuma', '2026/11/14', '', '未着手'),
     row('ケント', 'ちいかわ回', '編集・提出', '倉本', '2026/11/15', '17:00', '未着手'),
     row('ろびん', 'アキネーター①', '投稿予約', '倉本', '2026/11/15', '', '未着手'),
     row('ろびん', '最強主人公', '編集・提出', '倉本', '2026/11/16', '', '作業中'),
+    row('ケント', '実用回', '台本', 'takuma', '2026/11/17', '', '未着手'),
+    row('ケント', '別の回', '台本', 'takuma', '2026/11/18', '', '未着手'),
     row('一期一会', 'DQ5', '修正', '倉本', '', '', '作業中'),
-    row('ろびん', '済んだもの', '修正', '倉本', '2026/11/10', '', '完了'),
-    row('くみ', '', 'その他', 'takuma', '2026/11/10', '', '保留'),
+    row('ろびん', '済んだもの', '修正', '倉本', '2026/11/15', '', '完了'),
+    row('くみ', '', 'その他', 'takuma', '2026/11/15', '', '保留'),
     ['', '', '', '', '', '', '', '', '', '']
   ];
+  values[5][7] = '2026/11/18'; // 実用回の投稿予定日
   const tasks = gas.parseRows(values, '2026-11-15');
-  assert.equal(tasks.length, 7);
   const c = gas.classify(tasks, '2026-11-15');
-  assert.deepEqual([c.overdue.length, c.today.length, c.tomorrow.length, c.noDue.length], [1, 2, 1, 1]);
+  assert.deepEqual([c.overdue.length, c.today.length, c.tomorrow.length, c.dayAfter.length, c.later.length, c.noDue.length], [1, 2, 1, 1, 1, 1]);
   assert.equal(c.today[0].time, '17:00'); // 時刻ありが先
 
   const text = gas.buildMorningMessage(tasks, '2026-11-15', 'https://example.com/page');
   assert.equal(text, [
     '【制作の期限】11/15(日)',
-    '',
-    '■ 期限切れ（1件）',
-    '〔takuma〕',
-    '・11/14(土) ケント／ちいかわ回 台本［未着手］',
     '',
     '■ 今日が期限（2件）',
     '〔倉本〕',
@@ -75,6 +73,10 @@ test('期限切れ・今日・明日・未設定に分かれ、完了と保留�
     '〔倉本〕',
     '・ろびん／最強主人公 編集・提出［作業中］',
     '',
+    '■ 明後日が期限（1件）',
+    '〔takuma〕',
+    '・ケント／実用回（11/18投稿分） 台本［未着手］',
+    '',
     '期限未設定：1件',
     '',
     'https://example.com/page'
@@ -84,7 +86,7 @@ test('期限切れ・今日・明日・未設定に分かれ、完了と保留�
 test('該当なしの日と、読めない期限日', () => {
   const values = [HEADER, row('ろびん', 'A', '修正', '倉本', '来週', '', '作業中')];
   const text = gas.buildMorningMessage(gas.parseRows(values, '2026-11-15'), '2026-11-15', '');
-  assert.match(text, /ものはありません/);
+  assert.match(text, /今日から明後日までが期限のものはありません/);
   assert.match(text, /期限日を読めない行：2行目/);
 });
 
@@ -122,7 +124,7 @@ test('カード形式：倉本が先、空の文字なし、容量内', () => {
   const tasks = gas.parseRows(values, '2026-11-15');
   const msg = gas.buildFlexMessage(tasks, '2026-11-15', { page: 'https://script.google.com/x' });
   assert.equal(msg.type, 'flex');
-  assert.equal(msg.altText, '制作の期限 11/15(日)：今日2件・明日1件'.replace('今日2件', '今日3件'));
+  assert.equal(msg.altText, '制作の期限 11/15(日)：今日3件・明日1件');
   const texts = [];
   (function walk(n) {
     if (Array.isArray(n)) return n.forEach(walk);

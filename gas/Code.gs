@@ -123,25 +123,32 @@ function byDueThenTime(a, b) {
   return a.row - b.row;
 }
 
-/** 未完了のタスクを、期限切れ・今日・明日・それ以降・期限未設定に分ける。 */
+/** 未完了のタスクを、期限切れ・今日・明日・明後日・それ以降・期限未設定に分ける。 */
 function classify(tasks, today) {
-  var tomorrow = addDays(today, 1);
-  var out = { overdue: [], today: [], tomorrow: [], later: [], noDue: [] };
+  var tomorrow = addDays(today, 1), dayAfter = addDays(today, 2);
+  var out = { overdue: [], today: [], tomorrow: [], dayAfter: [], later: [], noDue: [] };
   tasks.filter(isOpen).forEach(function (t) {
     if (!t.due) out.noDue.push(t);
     else if (t.due < today) out.overdue.push(t);
     else if (t.due === today) out.today.push(t);
     else if (t.due === tomorrow) out.tomorrow.push(t);
+    else if (t.due === dayAfter) out.dayAfter.push(t);
     else out.later.push(t);
   });
-  ['overdue', 'today', 'tomorrow', 'later'].forEach(function (k) { out[k].sort(byDueThenTime); });
+  ['overdue', 'today', 'tomorrow', 'dayAfter', 'later'].forEach(function (k) { out[k].sort(byDueThenTime); });
   return out;
 }
 
 /* ---------- LINEに送る文面 ---------- */
 
+/** 動画名。投稿予定日があれば「（11/18投稿分）」を付けて、どの回か分かるようにする。 */
+function videoName(t) {
+  var name = t.title || t.project;
+  return t.postDate ? name + '（' + formatShort(t.postDate).replace(/\(.\)$/, '') + '投稿分）' : name;
+}
+
 function taskLabel(t) {
-  var name = t.project + (t.title ? '／' + t.title : '');
+  var name = t.project + (t.title ? '／' + videoName(t) : '');
   return name + (t.work && t.work !== 'その他' ? ' ' + t.work : '');
 }
 
@@ -174,10 +181,10 @@ function buildMorningMessage(tasks, today, pageUrl) {
   var c = classify(tasks, today);
   var lines = ['【制作の期限】' + formatShort(today)];
   var body = []
-    .concat(section('期限切れ', c.overdue, true))
     .concat(section('今日が期限', c.today, false))
-    .concat(section('明日が期限', c.tomorrow, false));
-  if (!body.length) body = ['', '期限切れ、今日が期限、明日が期限のものはありません。'];
+    .concat(section('明日が期限', c.tomorrow, false))
+    .concat(section('明後日が期限', c.dayAfter, false));
+  if (!body.length) body = ['', '今日から明後日までが期限のものはありません。'];
   lines = lines.concat(body);
 
   var notes = [];
@@ -213,10 +220,11 @@ function fxText(text, opts) {
 function fxRow(t, showDate) {
   var when = showDate ? formatShort(t.due).replace(/\(.\)$/, '') : (t.time || '終日');
   var strong = showDate || !!t.time;
-  var title = t.title || t.project;
+  // 1行目は「何をするか」、2行目は「どの案件の、何日投稿分か」
+  var title = (t.title || t.project) + (t.work && t.work !== 'その他' ? 'の' + t.work : '');
   var subParts = [];
   if (t.title) subParts.push(t.project);
-  if (t.work && t.work !== 'その他') subParts.push(t.work);
+  if (t.postDate) subParts.push(formatShort(t.postDate) + '投稿分');
   var middle = [fxText(title, { size: 'sm', weight: 'bold', color: FX.ink, wrap: true })];
   if (subParts.length) middle.push(fxText(subParts.join('・'), { size: 'xs', color: FX.sub, wrap: true }));
   return {
@@ -235,9 +243,9 @@ function buildFlexMessage(tasks, today, urls) {
   urls = urls || {};
   var c = classify(tasks, today);
   var sections = [
-    { title: '期限切れ', list: c.overdue, color: FX.red, showDate: true },
-    { title: '今日が期限', list: c.today, color: FX.ink, showDate: false },
-    { title: '明日が期限', list: c.tomorrow, color: FX.sub, showDate: false }
+    { title: '今日が期限', short: '今日', date: today, list: c.today, color: FX.ink },
+    { title: '明日が期限', short: '明日', date: addDays(today, 1), list: c.tomorrow, color: FX.sub },
+    { title: '明後日が期限', short: '明後日', date: addDays(today, 2), list: c.dayAfter, color: FX.sub }
   ].filter(function (s) { return s.list.length; });
 
   var body = [], rows = 0, omitted = 0;
@@ -247,7 +255,7 @@ function buildFlexMessage(tasks, today, urls) {
       type: 'box', layout: 'baseline', margin: i > 0 ? 'xl' : 'none', spacing: 'sm',
       contents: [
         fxText(s.title, { size: 'md', weight: 'bold', color: s.color, flex: 0 }),
-        fxText(s.list.length + '件', { size: 'xs', color: FX.sub, flex: 0 })
+        fxText(formatShort(s.date) + '　' + s.list.length + '件', { size: 'xs', color: FX.sub, flex: 0 })
       ]
     });
     var groups = groupByOwner(s.list);
@@ -257,12 +265,12 @@ function buildFlexMessage(tasks, today, urls) {
       g.tasks.forEach(function (t) {
         if (rows >= FLEX_MAX_ROWS) { omitted++; return; }
         rows++;
-        body.push(fxRow(t, s.showDate));
+        body.push(fxRow(t, false));
       });
     });
   });
   if (!sections.length) {
-    body.push(fxText('期限切れ、今日が期限、明日が期限のものはありません。', { size: 'sm', color: FX.ink, wrap: true }));
+    body.push(fxText('今日から明後日までが期限のものはありません。', { size: 'sm', color: FX.ink, wrap: true }));
   }
 
   var notes = [];
@@ -294,7 +302,7 @@ function buildFlexMessage(tasks, today, urls) {
   if (buttons.length) bubble.footer = { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px', contents: buttons };
 
   // 通知とトーク一覧に出る1行
-  var counts = sections.map(function (s) { return s.title.replace('が期限', '') + s.list.length + '件'; });
+  var counts = sections.map(function (s) { return s.short + s.list.length + '件'; });
   var alt = '制作の期限 ' + formatShort(today) + '：' + (counts.length ? counts.join('・') : '該当なし');
   return { type: 'flex', altText: alt.slice(0, 400), contents: bubble };
 }
