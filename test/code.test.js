@@ -191,13 +191,25 @@ test('投稿予定日を2つ書ける', () => {
   assert.equal(t.postDate, '2026-11-17');
   assert.equal(t.postDate2, '2026-11-18');
   const text = gas.buildMorningMessage([t], '2026-11-17', '');
-  assert.match(text, /ろびん／11\/17\(火\) or 11\/18\(水\)投稿分（最強主人公ランキング） 編集・提出/);
+  assert.match(text, /ろびん／11\/17\(火\) or 18\(水\)投稿分（最強主人公ランキング） 編集・提出/);
   const card = JSON.stringify(gas.buildFlexMessage([t], '2026-11-17', {}));
-  assert.ok(card.includes('11/17(火) or 11/18(水)投稿分の編集・提出'));
+  assert.ok(card.includes('最強主人公ランキングの編集・提出'));
+  assert.ok(card.includes('ろびん・11/17(火) or 18(水)投稿'));
   values[1][7] = '2026/11/17か11/18'; // 「か」で書いても読める
   assert.equal(gas.parseRows(values, '2026-11-17')[0].postDate2, '2026-11-18');
   values[1][7] = '2026/11/17OR11/18';
   assert.equal(gas.parseRows(values, '2026-11-17')[0].postDate2, '2026-11-18');
   values[1][7] = '2026/11/17';
   assert.equal(gas.parseRows(values, '2026-11-17')[0].postDate2, '');
+});
+
+test('カードの2行目は「案件・投稿日」に揃う', () => {
+  const values = [HEADER,
+    row('ケント', 'ちいかわ回', '編集・提出', '倉本', '2026/11/17', '', '作業中'),
+    row('ろびん', '直近動画の分析と次回企画', 'その他', 'takuma', '2026/11/17', '', '未着手'),
+    row('ロブロックス', '2本目（AI実技系）', '編集・提出', '倉本', '2026/11/18', '', '未着手')];
+  values[3][7] = '2026/11/20';
+  const card = JSON.stringify(gas.buildFlexMessage(gas.parseRows(values, '2026-11-17'), '2026-11-17', {}));
+  ['ちいかわ回の編集・提出', 'ケント・投稿日未定', '直近動画の分析と次回企画', 'ろびん・投稿なし', '2本目（AI実技系）の編集・提出', 'ロブロックス・11/20(金)投稿']
+    .forEach(s => assert.ok(card.includes(s), s));
 });

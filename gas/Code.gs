@@ -150,7 +150,14 @@ function classify(tasks, today) {
 /** 「11/17(火)投稿分」または「11/17(火) or 11/18(水)投稿分」。投稿日が無ければ ''。 */
 function postLabel(t) {
   if (!t.postDate) return '';
-  return formatShort(t.postDate) + (t.postDate2 ? ' or ' + formatShort(t.postDate2) : '') + '投稿分';
+  var second = '';
+  if (t.postDate2) {
+    // 同じ月なら2つ目の月を省く（11/17(火) or 18(水)）
+    second = formatShort(t.postDate2);
+    if (t.postDate2.slice(0, 7) === t.postDate.slice(0, 7)) second = second.replace(/^\d+\//, '');
+    second = ' or ' + second;
+  }
+  return formatShort(t.postDate) + second + '投稿分';
 }
 
 function videoName(t) {
@@ -230,13 +237,11 @@ function fxText(text, opts) {
 function fxRow(t, showDate) {
   var when = showDate ? formatShort(t.due).replace(/\(.\)$/, '') : (t.time || '終日');
   var strong = showDate || !!t.time;
-  // 1行目は「何日投稿分の、何の作業か」。投稿日が無いものは動画名で呼ぶ
-  var work = t.work && t.work !== 'その他' ? 'の' + t.work : '';
-  var title = (t.postDate ? postLabel(t) : (t.title || t.project)) + work;
-  // 2行目は案件と動画名
-  var subParts = [t.project];
-  if (t.postDate && t.title) subParts.push(t.title);
-  if (!t.postDate && !t.title) subParts = [];
+  // どの行も同じ形にする。1行目は「動画名の作業」、2行目は「案件・投稿日」
+  var isVideoWork = !!t.work && t.work !== 'その他';
+  var title = (t.title || t.project) + (isVideoWork ? 'の' + t.work : '');
+  var post = t.postDate ? postLabel(t).replace(/投稿分$/, '投稿') : (isVideoWork ? '投稿日未定' : '投稿なし');
+  var subParts = t.title ? [t.project, post] : [post]; // 動画名が無い行は、案件名を1行目に出しているので重ねない
   var middle = [fxText(title, { size: 'sm', weight: 'bold', color: FX.ink, wrap: true })];
   if (subParts.length) middle.push(fxText(subParts.join('・'), { size: 'xs', color: FX.sub, wrap: true }));
   return {
