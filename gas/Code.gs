@@ -8,7 +8,7 @@
  *   PAGE_URL   : 閲覧ページのURL（任意。入れると通知の末尾に付く）
  */
 
-var CODE_VERSION = '2026-11-18a'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
+var CODE_VERSION = '2026-11-18b'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
 var SHEET_NAME = 'タスク';
 var LOG_SHEET_NAME = 'LINEログ'; // botが受け取ったグループの発言を書き残すタブ
 var TZ = 'Asia/Tokyo';
@@ -580,7 +580,7 @@ function destinationsText_() {
 
 /** 送信先と一時停止中の送信先を、名前つきでログに出す。 */
 function listDestinations() {
-  Logger.log(destinationsText_());
+  show_('送信先', destinationsText_());
 }
 
 /** グループ名に RM_KEYWORD を含む送信先を、一時停止に移す。結果を { ok, message } で返す。 */
@@ -768,7 +768,13 @@ function selfCheck() {
   add(cmd.length === 1 && cmd[0].command === 'resume', 'コマンドの読み取り', '「/rm on」を再開として読めるか');
 
   results.push('', '今日のカードを文字にしたもの（送信はしていません）', buildMorningMessage(tasks, today, ''));
-  Logger.log(results.join('\n'));
+  show_('点検の結果（LINEには送っていません）', results.join('\n'));
+}
+
+/** メニューから実行したときは画面に出す。エディタから実行したときは実行ログに出す。 */
+function show_(title, text) {
+  Logger.log(text);
+  try { SpreadsheetApp.getUi().alert(title, text, SpreadsheetApp.getUi().ButtonSet.OK); } catch (err) {}
 }
 
 /** 毎朝のトリガーから呼ばれる。手動で実行すると、その場で1通送る。 */
