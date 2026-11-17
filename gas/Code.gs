@@ -334,8 +334,9 @@ function removeDestinations(value, ids) {
 
 /* ---------- LINEで送るコマンド ---------- */
 
+// 普段の会話で偶然一致しないよう、先頭に「/」を付けた英語にしている
 var COMMANDS = {
-  'RM停止': 'pause', 'RM再開': 'resume', '送信先': 'list', 'ヘルプ': 'help'
+  '/rm off': 'pause', '/rm on': 'resume', '/status': 'list', '/help': 'help'
 };
 
 /**
@@ -349,7 +350,8 @@ function extractCommands(bodyText) {
   var out = [];
   ((body && body.events) || []).forEach(function (e) {
     if (!e || e.type !== 'message' || !e.message || e.message.type !== 'text' || !e.replyToken) return;
-    var text = String(e.message.text).replace(/[\s　]+/g, '').replace(/^[@＠]?ROBIN制作管理/, '').toUpperCase().replace('ＲＭ', 'RM');
+    // 全角の「／」や空白のゆれ、大文字小文字は同じものとして扱う
+    var text = String(e.message.text).replace(/／/g, '/').replace(/[\s　]+/g, ' ').trim().toLowerCase();
     var cmd = COMMANDS[text];
     if (!cmd) return;
     var src = e.source || {};
@@ -404,10 +406,11 @@ function runCommand_(c) {
   if (c.command === 'pause') return pauseRM_().message;
   if (c.command === 'resume') return resumeRM_().message;
   if (c.command === 'list') return destinationsText_();
-  return ['使えることば（この文だけを送ってください）',
-    'RM停止：RMのグループへの毎朝の通知を止める',
-    'RM再開：止めた通知を再開する',
-    '送信先：いま通知が届くグループを表示する'].join('\n');
+  return ['使えるコマンド（この文だけを1通で送ってください）',
+    '/rm off：RMのグループへの毎朝の通知を止める',
+    '/rm on：止めた通知を再開する',
+    '/status：いま通知が届くグループを表示する',
+    '/help：この一覧を表示する'].join('\n');
 }
 
 /** LINEの返信（受け取った発言への返事。送信数の上限には数えられない）。 */
@@ -498,7 +501,7 @@ function pauseRM_() {
   var paused = props.getProperty('LINE_TO_PAUSED');
   hit.forEach(function (id) { paused = addDestination(paused, id); });
   props.setProperty('LINE_TO_PAUSED', paused);
-  return { ok: true, message: 'RMへの毎朝の通知を止めました。再開するときは「RM再開」と送ってください。\n\n' + destinationsText_() };
+  return { ok: true, message: 'RMへの毎朝の通知を止めました。再開するときは「/rm on」と送ってください。\n\n' + destinationsText_() };
 }
 
 /** pauseRM で止めた送信先を、送信先に戻す。結果を { ok, message } で返す。 */

@@ -170,14 +170,16 @@ test('LINEのコマンドを取り出す', () => {
   const g = 'C' + 'a'.repeat(32);
   const ev = (text, extra = {}) => JSON.stringify({ events: [{ type: 'message', replyToken: 'r1',
     source: { type: 'group', groupId: g }, message: { type: 'text', text }, ...extra }] });
-  assert.deepEqual(JSON.parse(JSON.stringify(gas.extractCommands(ev('RM再開')))), [{ command: 'resume', replyToken: 'r1', source: g }]);
-  assert.equal(gas.extractCommands(ev(' rm停止 '))[0].command, 'pause');
-  assert.equal(gas.extractCommands(ev('ＲＭ再開'))[0].command, 'resume');
-  assert.equal(gas.extractCommands(ev('@ROBIN 制作管理 送信先'))[0].command, 'list');
-  assert.equal(gas.extractCommands(ev('ヘルプ'))[0].command, 'help');
-  // 普段の会話には反応しない
-  assert.equal(gas.extractCommands(ev('RM再開しといて')).length, 0);
-  assert.equal(gas.extractCommands(ev('明日RM停止かな')).length, 0);
+  assert.deepEqual(JSON.parse(JSON.stringify(gas.extractCommands(ev('/rm on')))), [{ command: 'resume', replyToken: 'r1', source: g }]);
+  assert.equal(gas.extractCommands(ev(' /RM  OFF '))[0].command, 'pause');
+  assert.equal(gas.extractCommands(ev('／rm　on'))[0].command, 'resume');
+  assert.equal(gas.extractCommands(ev('/status'))[0].command, 'list');
+  assert.equal(gas.extractCommands(ev('/help'))[0].command, 'help');
+  // 日本語や、文の途中に含まれるものには反応しない
+  assert.equal(gas.extractCommands(ev('RM再開')).length, 0);
+  assert.equal(gas.extractCommands(ev('rm on')).length, 0);
+  assert.equal(gas.extractCommands(ev('/rm on しといて')).length, 0);
+  assert.equal(gas.extractCommands(ev('/rmon')).length, 0);
   assert.equal(gas.extractCommands(JSON.stringify({ events: [{ type: 'join', replyToken: 'r', source: { groupId: g } }] })).length, 0);
   assert.equal(gas.extractCommands('壊れた本文').length, 0);
 });
