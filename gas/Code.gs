@@ -8,6 +8,7 @@
  *   PAGE_URL   : 閲覧ページのURL（任意。入れると通知の末尾に付く）
  */
 
+var CODE_VERSION = '2026-11-17b'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
 var SHEET_NAME = 'タスク';
 var TZ = 'Asia/Tokyo';
 var SEND_HOUR = 8; // 毎朝の送信時刻（時）。実際の送信は前後15分ほどずれる
@@ -602,6 +603,78 @@ function checkSettings() {
   }
 }
 
+/**
+ * LINEに何も送らずに、仕組みが動くかを点検してログに出す。
+ * 1. トークン  2. 送信先  3. 毎朝の予約  4. Webhook  5. デプロイ済みの版  6. 今日のカード  7. コマンドの読み取り
+ */
+function selfCheck() {
+  var props = PropertiesService.getScriptProperties();
+  var results = [];
+  function add(ok, label, detail) { results.push((ok ? 'OK　' : 'NG　') + label + (detail ? '：' + detail : '')); }
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = { Authorization: 'Bearer ' + lineToken_() };
+    opts.muteHttpExceptions = true;
+    return UrlFetchApp.fetch('https://api.line.me' + path, opts);
+  }
+
+  // 1. トークン
+  var info = api('/v2/bot/info');
+  add(info.getResponseCode() === 200, 'トークン',
+    info.getResponseCode() === 200 ? JSON.parse(info.getContentText()).displayName : '無効（' + info.getResponseCode() + '）');
+
+  // 2. 送信先
+  var on = parseDestinations(props.getProperty('LINE_TO'));
+  add(on.length > 0, '送信先', on.length ? on.map(destinationName_).join('、') : 'LINE_TO が空です');
+  var off = parseDestinations(props.getProperty('LINE_TO_PAUSED'));
+  if (off.length) results.push('　　一時停止中：' + off.map(destinationName_).join('、'));
+
+  // 3. 毎朝の予約
+  var trig = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'sendMorningDigest'; });
+  add(trig.length === 1, '毎朝の予約', trig.length === 1 ? '毎朝' + SEND_HOUR + '時台' : trig.length + '件（1件が正常。setup を実行してください）');
+
+  // 4. Webhook（LINEがグループの発言をこのスクリプトに渡すか）
+  var appUrl = ScriptApp.getService().getUrl() || '';
+  var wh = api('/v2/bot/channel/webhook/endpoint');
+  if (wh.getResponseCode() === 200) {
+    var w = JSON.parse(wh.getContentText());
+    add(w.active, 'Webhookの利用', w.active ? 'オン' : 'オフ（LINE Developersコンソールでオンにしてください）');
+    var same = String(w.endpoint || '').replace(/\?.*$/, '') === appUrl.replace(/\?.*$/, '');
+    add(same, 'Webhook URL', same ? 'このスクリプトの公開URLと一致' : 'このスクリプトの公開URLと違います（' + (w.endpoint || '未設定') + '）');
+  } else {
+    add(false, 'Webhook', '確認できませんでした（' + wh.getResponseCode() + '）');
+  }
+
+  // 5. デプロイ済みの版（LINEから呼ばれるのはデプロイした版）
+  if (appUrl) {
+    var v = UrlFetchApp.fetch(appUrl + '?check=version', { muteHttpExceptions: true, followRedirects: true });
+    var deployed = v.getResponseCode() === 200 ? v.getContentText().trim() : '';
+    add(deployed === CODE_VERSION, 'デプロイ済みの版',
+      deployed === CODE_VERSION ? CODE_VERSION :
+      (/^[0-9]{4}-[0-9]{2}-[0-9]{2}/.test(deployed) ? '古い版です（' + deployed + '）。' :
+       deployed ? '古い版です（版の情報が入っていない頃のコード）。' : '確かめられませんでした。') +
+      '「デプロイを管理」から新バージョンでデプロイしてください');
+  } else {
+    add(false, 'デプロイ', 'ウェブアプリとしてデプロイされていません');
+  }
+
+  // 6. 今日のカード（LINEの検査用の窓口に出すだけで、送信はしない）
+  var tasks = readTasks_(), today = todayString_();
+  var flex = buildFlexMessage(tasks, today, { page: props.getProperty('PAGE_URL') || '' });
+  var val = api('/v2/bot/message/validate/push', { method: 'post', contentType: 'application/json',
+    payload: JSON.stringify({ messages: [flex] }) });
+  add(val.getResponseCode() === 200, '今日のカード', val.getResponseCode() === 200 ? flex.altText : 'LINEが受け付けない形です：' + val.getContentText());
+
+  // 7. コマンドの読み取り
+  var sample = JSON.stringify({ events: [{ type: 'message', replyToken: 'x', source: { type: 'group', groupId: 'C' + Array(33).join('0') },
+    message: { type: 'text', text: '/rm on' } }] });
+  var cmd = extractCommands(sample);
+  add(cmd.length === 1 && cmd[0].command === 'resume', 'コマンドの読み取り', '「/rm on」を再開として読めるか');
+
+  results.push('', '今日のカードを文字にしたもの（送信はしていません）', buildMorningMessage(tasks, today, ''));
+  Logger.log(results.join('\n'));
+}
+
 /** 毎朝のトリガーから呼ばれる。手動で実行すると、その場で1通送る。 */
 function sendMorningDigest() {
   var pageUrl = PropertiesService.getScriptProperties().getProperty('PAGE_URL') || '';
@@ -637,6 +710,7 @@ function stopDigest() {
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('制作管理')
+    .addItem('LINEに送らずに点検する', 'selfCheck')
     .addItem('今すぐLINEに送る', 'sendMorningDigest')
     .addItem('毎朝' + SEND_HOUR + '時の通知を登録する', 'setup')
     .addItem('毎朝の通知を止める', 'stopDigest')
@@ -650,7 +724,9 @@ function onOpen() {
 
 /* ---------- 閲覧ページ ---------- */
 
-function doGet() {
+function doGet(e) {
+  // selfCheck から、デプロイ済みの版を確かめるために呼ばれる
+  if (e && e.parameter && e.parameter.check === 'version') return ContentService.createTextOutput(CODE_VERSION);
   return HtmlService.createHtmlOutputFromFile('index')
     .setTitle('ROBIN 制作管理')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
