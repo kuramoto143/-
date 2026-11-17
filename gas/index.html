@@ -81,7 +81,15 @@
   summary { cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
   .msg { padding: 32px 0; color: var(--sub); text-align: center; }
   .msg.err { color: var(--red); }
+  .pv { margin: 16px 0 8px; display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .pv-head h2 { margin: 0 0 6px; }
+  .pv-head p { margin: 0 0 10px; color: var(--sub); font-size: 13px; }
+  .pv-stage { background: #8CABD9; border-radius: 12px; padding: 14px; }
+  .lc { background: #FFFFFF; color: #111C2E; border-radius: 16px; overflow: hidden; max-width: 340px;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; }
+  .lc-alt { font-size: 12px; color: var(--sub); margin-top: 8px; }
   @media (max-width: 640px) {
+    .pv { grid-template-columns: 1fr; }
     .tiles { grid-template-columns: repeat(2, 1fr); }
     .task { grid-template-columns: 62px 1fr; }
     .side { grid-column: 2; text-align: left; display: flex; gap: 8px; align-items: center; }
@@ -173,7 +181,7 @@
     var held = tasks.filter(function (t) { return t.status === '保留'; });
     var done = tasks.filter(function (t) { return t.status === '完了'; }).sort(sortTasks).reverse();
 
-    var html = '<div class="tiles">' +
+    var html = previewHtml(d) + '<div class="tiles">' +
       '<a class="tile' + (g.overdue.length ? ' red' : '') + '" href="#overdue" target="_self"><b>' + g.overdue.length + '</b><span>期限切れ</span></a>' +
       '<a class="tile' + (g.today.length ? ' amber' : '') + '" href="#today" target="_self"><b>' + g.today.length + '</b><span>今日が期限</span></a>' +
       '<a class="tile" href="#tomorrow" target="_self"><b>' + g.tomorrow.length + '</b><span>明日が期限</span></a>' +
@@ -216,7 +224,57 @@
     app.innerHTML = html;
   }
 
+  // ---- LINE通知のプレビュー（Flex Messageの中身を、LINEに近い見た目で描く） ----
+  var SZ = { xxs: 11, xs: 13, sm: 14, md: 16, lg: 19, xl: 22, xxl: 24 }, MG = { none: 0, xs: 2, sm: 4, md: 8, lg: 12, xl: 16, xxl: 20 };
+  function flexNode(n, parent) {
+    var row = parent === 'horizontal' || parent === 'baseline';
+    var m = n.margin && MG[n.margin] != null ? 'margin-' + (row ? 'left' : 'top') + ':' + MG[n.margin] + 'px;' : '';
+    if (n.type === 'text') {
+      return '<div style="' + m + 'font-size:' + (SZ[n.size || 'md']) + 'px;font-weight:' + (n.weight === 'bold' ? 700 : 400) +
+        ';color:' + esc(n.color || '#111C2E') + ';line-height:1.45;' + (n.wrap ? 'overflow-wrap:anywhere;' : 'white-space:nowrap;') +
+        (n.flex === 0 ? 'flex:none;' : 'flex:1;min-width:0;') + (n.align === 'end' ? 'text-align:right;' : '') + '">' + esc(n.text) + '</div>';
+    }
+    if (n.type === 'separator') return '<div style="' + m + 'height:1px;background:' + esc(n.color || '#E6E9EE') + '"></div>';
+    if (n.type === 'button') {
+      return '<div style="' + m + 'text-align:center;padding:9px;border-radius:8px;font-size:14px;font-weight:700;background:' +
+        esc(n.color || '#111C2E') + ';color:#FFFFFF">' + esc(n.action && n.action.label) + '</div>';
+    }
+    if (n.type === 'box') {
+      var dir = n.layout === 'vertical' ? 'column' : 'row';
+      var st = m + 'display:flex;flex-direction:' + dir + ';gap:' + (MG[n.spacing || 'none'] || 0) + 'px;' +
+        (n.layout === 'baseline' ? 'align-items:baseline;' : '') +
+        (n.width ? 'width:' + esc(n.width) + ';flex:none;' : (n.flex === 1 ? 'flex:1;min-width:0;' : '')) +
+        (n.backgroundColor ? 'background:' + esc(n.backgroundColor) + ';' : '') + (n.paddingAll ? 'padding:' + esc(n.paddingAll) + ';' : '');
+      return '<div style="' + st + '">' + (n.contents || []).map(function (c) {
+        return flexNode(n.layout !== 'vertical' && c.margin ? Object.assign({}, c, { margin: null }) : c, n.layout);
+      }).join('') + '</div>';
+    }
+    return '';
+  }
+  function flexCard(msg) {
+    var b = msg && msg.contents;
+    if (!b) return '';
+    return '<div class="lc">' + (b.header ? flexNode(b.header) : '') + (b.body ? flexNode(b.body) : '') + (b.footer ? flexNode(b.footer) : '') + '</div>';
+  }
+  state.pv = 'tomorrow';
+  function previewHtml(d) {
+    var p = d.preview;
+    if (!p) return '';
+    var msg = p[state.pv];
+    var note = state.pv === 'tomorrow'
+      ? '明日の朝' + p.sendHour + '時台に届く通知です（いまのシートの中身のままの場合）。シートを直したら「再読み込み」で更新されます。'
+      : '今朝' + p.sendHour + '時台に届いた形の通知を、いまのシートの中身で作ったものです。';
+    return '<section class="pv" aria-label="LINE通知のプレビュー"><div class="pv-head"><h2>LINE通知のプレビュー<small>LINEには送りません</small></h2>' +
+      '<p>' + esc(note) + '</p><div class="seg" role="group" aria-label="プレビューの日">' +
+      '<button type="button" data-pv="tomorrow" aria-pressed="' + (state.pv === 'tomorrow') + '">明日の朝</button>' +
+      '<button type="button" data-pv="today" aria-pressed="' + (state.pv === 'today') + '">今朝</button></div>' +
+      '<p class="lc-alt">通知とトーク一覧に出る1行：' + esc(msg && msg.altText) + '</p></div>' +
+      '<div class="pv-stage">' + flexCard(msg) + '</div></section>';
+  }
+
   app.addEventListener('click', function (e) {
+    var pb = e.target.closest('button[data-pv]');
+    if (pb) { state.pv = pb.getAttribute('data-pv'); render(); return; }
     var b = e.target.closest('button[data-owner]');
     if (b) { state.owner = b.getAttribute('data-owner'); render(); }
   });

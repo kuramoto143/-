@@ -765,11 +765,20 @@ function doGet(e) {
 
 /** 閲覧ページから呼ばれる。 */
 function getData() {
+  var today = todayString_(), tomorrow = addDays(today, 1);
+  var pageUrl = PropertiesService.getScriptProperties().getProperty('PAGE_URL') || '';
+  var tasks = readTasks_();
   return {
-    today: todayString_(),
+    today: today,
     loadedAt: Utilities.formatDate(new Date(), TZ, 'M/d HH:mm'),
     sheetUrl: SpreadsheetApp.getActive().getUrl(),
-    tasks: readTasks_()
+    tasks: tasks,
+    // LINEに届く通知と同じ中身。今朝の分と、いまのシートのままなら明日の朝に届く分
+    preview: {
+      today: buildFlexMessage(tasks, today, { page: pageUrl }),
+      tomorrow: buildFlexMessage(parseRows(SpreadsheetApp.getActive().getSheetByName(SHEET_NAME).getDataRange().getDisplayValues(), tomorrow), tomorrow, { page: pageUrl }),
+      sendHour: SEND_HOUR
+    }
   };
 }
 
