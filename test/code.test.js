@@ -77,8 +77,6 @@ test('今日・明日・明後日に分かれ、期限切れ・完了・保留�
     '〔takuma〕',
     '・ケント／11/18(水)投稿分（実用回） 台本［未着手］',
     '',
-    '期限未設定：1件',
-    '',
     'https://example.com/page'
   ].join('\n'));
 });
@@ -134,7 +132,7 @@ test('カード形式：倉本が先、空の文字なし、容量内', () => {
     }
   })(msg.contents);
   assert.ok(texts.indexOf('倉本　2件') < texts.indexOf('takuma　1件'));
-  assert.ok(texts.includes('期限未設定 1件'));
+  assert.ok(!texts.some(t => t.includes('期限未設定')));
   assert.equal(msg.contents.footer.contents.length, 1);
 
   const many = [HEADER];

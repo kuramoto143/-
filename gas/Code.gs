@@ -8,7 +8,7 @@
  *   PAGE_URL   : 閲覧ページのURL（任意。入れると通知の末尾に付く）
  */
 
-var CODE_VERSION = '2026-11-17c'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
+var CODE_VERSION = '2026-11-18a'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
 var SHEET_NAME = 'タスク';
 var LOG_SHEET_NAME = 'LINEログ'; // botが受け取ったグループの発言を書き残すタブ
 var TZ = 'Asia/Tokyo';
@@ -222,7 +222,6 @@ function buildMorningMessage(tasks, today, pageUrl) {
   lines = lines.concat(body);
 
   var notes = [];
-  if (c.noDue.length) notes.push('期限未設定：' + c.noDue.length + '件');
   var unreadable = tasks.filter(function (t) { return t.dueUnreadable; });
   if (unreadable.length) {
     notes.push('期限日を読めない行：' + unreadable.map(function (t) { return t.row + '行目'; }).join('、'));
@@ -310,7 +309,6 @@ function buildFlexMessage(tasks, today, urls) {
 
   var notes = [];
   if (omitted) notes.push('ほか' + omitted + '件はシートで確認');
-  if (c.noDue.length) notes.push('期限未設定 ' + c.noDue.length + '件');
   var unreadable = tasks.filter(function (t) { return t.dueUnreadable; });
   if (unreadable.length) notes.push('期限日を読めない行 ' + unreadable.map(function (t) { return t.row + '行目'; }).join('、'));
   if (notes.length) {
