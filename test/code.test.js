@@ -86,7 +86,7 @@ test('今日・明日・明後日に分かれ、期限切れ・完了・保留�
 test('該当なしの日と、読めない期限日', () => {
   const values = [HEADER, row('ろびん', 'A', '修正', '倉本', '来週', '', '作業中')];
   const text = gas.buildMorningMessage(gas.parseRows(values, '2026-11-15'), '2026-11-15', '');
-  assert.match(text, /今日から明後日までが期限のものはありません/);
+  assert.match(text, /■ 明後日が期限（0件）\nなし/);
   assert.match(text, /期限日を読めない行：2行目/);
 });
 
@@ -124,7 +124,7 @@ test('カード形式：倉本が先、空の文字なし、容量内', () => {
   const tasks = gas.parseRows(values, '2026-11-15');
   const msg = gas.buildFlexMessage(tasks, '2026-11-15', { page: 'https://script.google.com/x' });
   assert.equal(msg.type, 'flex');
-  assert.equal(msg.altText, '制作の期限 11/15(日)：今日3件・明日1件');
+  assert.equal(msg.altText, '制作の期限 11/15(日)：今日3件・明日1件・明後日0件');
   const texts = [];
   (function walk(n) {
     if (Array.isArray(n)) return n.forEach(walk);
@@ -144,7 +144,7 @@ test('カード形式：倉本が先、空の文字なし、容量内', () => {
   assert.ok(JSON.stringify(big).includes('ほか270件はシートで確認'));
 
   const none = gas.buildFlexMessage([], '2026-11-15', {});
-  assert.equal(none.altText, '制作の期限 11/15(日)：該当なし');
+  assert.equal(none.altText, '制作の期限 11/15(日)：今日0件・明日0件・明後日0件');
   assert.equal(none.contents.footer, undefined);
 });
 

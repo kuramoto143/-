@@ -162,8 +162,8 @@ function groupByOwner(list) {
 }
 
 function section(title, list, showDate) {
-  if (!list.length) return [];
   var lines = ['', '■ ' + title + '（' + list.length + '件）'];
+  if (!list.length) return lines.concat(['なし']);
   groupByOwner(list).forEach(function (g) {
     lines.push('〔' + g.owner + '〕');
     g.tasks.forEach(function (t) {
@@ -184,7 +184,6 @@ function buildMorningMessage(tasks, today, pageUrl) {
     .concat(section('今日が期限', c.today, false))
     .concat(section('明日が期限', c.tomorrow, false))
     .concat(section('明後日が期限', c.dayAfter, false));
-  if (!body.length) body = ['', '今日から明後日までが期限のものはありません。'];
   lines = lines.concat(body);
 
   var notes = [];
@@ -248,7 +247,7 @@ function buildFlexMessage(tasks, today, urls) {
     { title: '今日が期限', short: '今日', date: today, list: c.today, color: FX.ink },
     { title: '明日が期限', short: '明日', date: addDays(today, 1), list: c.tomorrow, color: FX.sub },
     { title: '明後日が期限', short: '明後日', date: addDays(today, 2), list: c.dayAfter, color: FX.sub }
-  ].filter(function (s) { return s.list.length; });
+  ]; // 3日分は、期限のものが無い日も「なし」と出して、見落としではないと分かるようにする
 
   var body = [], rows = 0, omitted = 0;
   sections.forEach(function (s, i) {
@@ -260,6 +259,10 @@ function buildFlexMessage(tasks, today, urls) {
         fxText(formatShort(s.date) + '　' + s.list.length + '件', { size: 'xs', color: FX.sub, flex: 0 })
       ]
     });
+    if (!s.list.length) {
+      body.push(fxText('なし', { size: 'sm', color: FX.sub, margin: 'md' }));
+      return;
+    }
     var groups = groupByOwner(s.list);
     groups.sort(function (a, b) { return (a.owner === ME ? 0 : 1) - (b.owner === ME ? 0 : 1); });
     groups.forEach(function (g) {
@@ -271,9 +274,6 @@ function buildFlexMessage(tasks, today, urls) {
       });
     });
   });
-  if (!sections.length) {
-    body.push(fxText('今日から明後日までが期限のものはありません。', { size: 'sm', color: FX.ink, wrap: true }));
-  }
 
   var notes = [];
   if (omitted) notes.push('ほか' + omitted + '件はシートで確認');
@@ -305,7 +305,7 @@ function buildFlexMessage(tasks, today, urls) {
 
   // 通知とトーク一覧に出る1行
   var counts = sections.map(function (s) { return s.short + s.list.length + '件'; });
-  var alt = '制作の期限 ' + formatShort(today) + '：' + (counts.length ? counts.join('・') : '該当なし');
+  var alt = '制作の期限 ' + formatShort(today) + '：' + counts.join('・');
   return { type: 'flex', altText: alt.slice(0, 400), contents: bubble };
 }
 
