@@ -213,3 +213,15 @@ test('カードの2行目は「案件・投稿日」に揃う', () => {
   ['ちいかわ回の編集・提出', 'ケント・投稿日未定', '直近動画の分析と次回企画', 'ろびん・投稿なし', '2本目（AI実技系）の編集・提出', 'ロブロックス・11/20(金)投稿']
     .forEach(s => assert.ok(card.includes(s), s));
 });
+
+test('期限日を2つ書くと、遅いほうの日まで通知に残る', () => {
+  const values = [HEADER, row('ケント', 'ちいかわ回', '編集・提出', '倉本', '2026/11/18 or 11/19', '', '作業中')];
+  const on17 = gas.parseRows(values, '2026-11-17');
+  assert.equal(on17[0].due, '2026-11-19');
+  assert.equal(on17[0].dueFirst, '2026-11-18');
+  assert.equal(gas.classify(on17, '2026-11-17').dayAfter.length, 1);
+  assert.equal(gas.classify(gas.parseRows(values, '2026-11-19'), '2026-11-19').today.length, 1);
+  const card = JSON.stringify(gas.buildFlexMessage(on17, '2026-11-17', {}));
+  assert.ok(card.includes('"水/木"'));
+  assert.match(gas.buildMorningMessage(on17, '2026-11-17', ''), /・水\/木のどちらか ケント／ちいかわ回 編集・提出/);
+});

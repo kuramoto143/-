@@ -79,6 +79,19 @@ function formatShort(ymd) {
 
 /* ---------- シートの行をタスクに変換 ---------- */
 
+/** 「2026/11/17 or 11/18」のような欄を、日付（YYYY-MM-DD）の配列にする。2つまで。 */
+function splitDates_(text, today) {
+  return String(text == null ? '' : text).split(/\s*(?:or|か|〜|~|、|,|または)\s*/i)
+    .map(function (d) { return normalizeDate(d, today); }).filter(function (d) { return d; }).slice(0, 2);
+}
+
+/** 期限日が2つあるときの短い表記（水/木）。1つなら ''。 */
+function dueDays(t) {
+  if (!t.dueFirst) return '';
+  var w = function (ymd) { return formatShort(ymd).replace(/^.*\((.)\)$/, '$1'); };
+  return w(t.dueFirst) + '/' + w(t.due);
+}
+
 /** getDisplayValues() の2次元配列を、タスクの配列にする。 */
 function parseRows(values, today) {
   if (!values || !values.length) return [];
@@ -95,17 +108,19 @@ function parseRows(values, today) {
     var get = function (key) { return String(row[index[key]] == null ? '' : row[index[key]]).trim(); };
     if (!get('project') && !get('title')) continue;
     var dueRaw = get('due');
+    // 期限日も「2026/11/18 or 11/19」のように2つまで書ける。区分けは遅いほう（本当の締め切り）で行う
+    var dues = splitDates_(dueRaw, today);
     // 投稿予定日は「2026/11/17 or 11/18」のように2つまで書ける（どちらかに投稿する場合）
-    var postDates = get('postDate').split(/\s*(?:or|か|〜|~|、|,|または)\s*/i)
-      .map(function (d) { return normalizeDate(d, today); }).filter(function (d) { return d; }).slice(0, 2);
+    var postDates = splitDates_(get('postDate'), today);
     tasks.push({
       row: r + 1,
       project: get('project'),
       title: get('title'),
       work: get('work'),
       owner: get('owner') || '担当未定',
-      due: normalizeDate(dueRaw, today),
-      dueUnreadable: !!dueRaw && !normalizeDate(dueRaw, today),
+      due: dues.length ? dues[dues.length - 1] : '',
+      dueFirst: dues.length > 1 ? dues[0] : '',
+      dueUnreadable: !!dueRaw && !dues.length,
       time: normalizeTime(get('time')),
       status: get('status') || '未着手',
       postDate: postDates[0] || '',
@@ -187,6 +202,7 @@ function section(title, list, showDate) {
     g.tasks.forEach(function (t) {
       var head = [];
       if (showDate) head.push(formatShort(t.due));
+      if (t.dueFirst) head.push(dueDays(t) + 'のどちらか');
       if (t.time) head.push(t.time);
       lines.push('・' + (head.length ? head.join(' ') + ' ' : '') + taskLabel(t) + '［' + t.status + '］');
     });
@@ -235,13 +251,13 @@ function fxText(text, opts) {
 }
 
 function fxRow(t, showDate) {
-  var when = showDate ? formatShort(t.due).replace(/\(.\)$/, '') : (t.time || '終日');
-  var strong = showDate || !!t.time;
+  var when = showDate ? formatShort(t.due).replace(/\(.\)$/, '') : (dueDays(t) || t.time || '終日');
+  var strong = showDate || !!t.time || !!t.dueFirst;
   // どの行も同じ形にする。1行目は「動画名の作業」、2行目は「案件・投稿日」
   var isVideoWork = !!t.work && t.work !== 'その他';
   var title = (t.title || t.project) + (isVideoWork ? 'の' + t.work : '');
   var post = t.postDate ? postLabel(t).replace(/投稿分$/, '投稿') : (isVideoWork ? '投稿日未定' : '投稿なし');
-  var subParts = t.title ? [t.project, post] : [post]; // 動画名が無い行は、案件名を1行目に出しているので重ねない
+  var subParts = [t.project, post]; // 動画名が無い行も、形を揃えるため案件名を出す
   var middle = [fxText(title, { size: 'sm', weight: 'bold', color: FX.ink, wrap: true })];
   if (subParts.length) middle.push(fxText(subParts.join('・'), { size: 'xs', color: FX.sub, wrap: true }));
   return {
