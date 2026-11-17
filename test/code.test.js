@@ -183,3 +183,17 @@ test('LINEのコマンドを取り出す', () => {
   assert.equal(gas.extractCommands(JSON.stringify({ events: [{ type: 'join', replyToken: 'r', source: { groupId: g } }] })).length, 0);
   assert.equal(gas.extractCommands('壊れた本文').length, 0);
 });
+
+test('投稿予定日を2つ書ける', () => {
+  const values = [HEADER, row('ろびん', '最強主人公ランキング', '編集・提出', '倉本', '2026/11/17', '', '作業中')];
+  values[1][7] = '2026/11/17か11/18';
+  const t = gas.parseRows(values, '2026-11-17')[0];
+  assert.equal(t.postDate, '2026-11-17');
+  assert.equal(t.postDate2, '2026-11-18');
+  const text = gas.buildMorningMessage([t], '2026-11-17', '');
+  assert.match(text, /ろびん／11\/17\(火\)か11\/18\(水\)投稿分（最強主人公ランキング） 編集・提出/);
+  const card = JSON.stringify(gas.buildFlexMessage([t], '2026-11-17', {}));
+  assert.ok(card.includes('11/17(火)か11/18(水)投稿分の編集・提出'));
+  values[1][7] = '2026/11/17';
+  assert.equal(gas.parseRows(values, '2026-11-17')[0].postDate2, '');
+});
