@@ -75,7 +75,7 @@ test('今日・明日・明後日に分かれ、期限切れ・完了・保留�
     '',
     '■ 明後日が期限（1件）',
     '〔takuma〕',
-    '・ケント／実用回（11/18投稿分） 台本［未着手］',
+    '・ケント／11/18(水)投稿分（実用回） 台本［未着手］',
     '',
     '期限未設定：1件',
     '',
@@ -164,4 +164,20 @@ test('送信先からIDを除く', () => {
   assert.equal(gas.removeDestinations(a + ',' + b, [b]), a);
   assert.equal(gas.removeDestinations(a, [b]), a);
   assert.equal(gas.removeDestinations('', [a]), '');
+});
+
+test('LINEのコマンドを取り出す', () => {
+  const g = 'C' + 'a'.repeat(32);
+  const ev = (text, extra = {}) => JSON.stringify({ events: [{ type: 'message', replyToken: 'r1',
+    source: { type: 'group', groupId: g }, message: { type: 'text', text }, ...extra }] });
+  assert.deepEqual(JSON.parse(JSON.stringify(gas.extractCommands(ev('RM再開')))), [{ command: 'resume', replyToken: 'r1', source: g }]);
+  assert.equal(gas.extractCommands(ev(' rm停止 '))[0].command, 'pause');
+  assert.equal(gas.extractCommands(ev('ＲＭ再開'))[0].command, 'resume');
+  assert.equal(gas.extractCommands(ev('@ROBIN 制作管理 送信先'))[0].command, 'list');
+  assert.equal(gas.extractCommands(ev('ヘルプ'))[0].command, 'help');
+  // 普段の会話には反応しない
+  assert.equal(gas.extractCommands(ev('RM再開しといて')).length, 0);
+  assert.equal(gas.extractCommands(ev('明日RM停止かな')).length, 0);
+  assert.equal(gas.extractCommands(JSON.stringify({ events: [{ type: 'join', replyToken: 'r', source: { groupId: g } }] })).length, 0);
+  assert.equal(gas.extractCommands('壊れた本文').length, 0);
 });

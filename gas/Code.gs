@@ -144,7 +144,7 @@ function classify(tasks, today) {
 /** 動画名。投稿予定日があれば「（11/18投稿分）」を付けて、どの回か分かるようにする。 */
 function videoName(t) {
   var name = t.title || t.project;
-  return t.postDate ? name + '（' + formatShort(t.postDate).replace(/\(.\)$/, '') + '投稿分）' : name;
+  return t.postDate ? formatShort(t.postDate) + '投稿分（' + name + '）' : name;
 }
 
 function taskLabel(t) {
@@ -220,11 +220,13 @@ function fxText(text, opts) {
 function fxRow(t, showDate) {
   var when = showDate ? formatShort(t.due).replace(/\(.\)$/, '') : (t.time || '終日');
   var strong = showDate || !!t.time;
-  // 1行目は「何をするか」、2行目は「どの案件の、何日投稿分か」
-  var title = (t.title || t.project) + (t.work && t.work !== 'その他' ? 'の' + t.work : '');
-  var subParts = [];
-  if (t.title) subParts.push(t.project);
-  if (t.postDate) subParts.push(formatShort(t.postDate) + '投稿分');
+  // 1行目は「何日投稿分の、何の作業か」。投稿日が無いものは動画名で呼ぶ
+  var work = t.work && t.work !== 'その他' ? 'の' + t.work : '';
+  var title = (t.postDate ? formatShort(t.postDate) + '投稿分' : (t.title || t.project)) + work;
+  // 2行目は案件と動画名
+  var subParts = [t.project];
+  if (t.postDate && t.title) subParts.push(t.title);
+  if (!t.postDate && !t.title) subParts = [];
   var middle = [fxText(title, { size: 'sm', weight: 'bold', color: FX.ink, wrap: true })];
   if (subParts.length) middle.push(fxText(subParts.join('・'), { size: 'xs', color: FX.sub, wrap: true }));
   return {
@@ -330,6 +332,32 @@ function removeDestinations(value, ids) {
   return parseDestinations(value).filter(function (d) { return ids.indexOf(d) === -1; }).join(',');
 }
 
+/* ---------- LINEで送るコマンド ---------- */
+
+var COMMANDS = {
+  'RM停止': 'pause', 'RM再開': 'resume', '送信先': 'list', 'ヘルプ': 'help'
+};
+
+/**
+ * Webhookの本文から、コマンドとして送られた発言を取り出す。
+ * 発言全体がコマンドと一致したときだけ反応する（普段の会話では反応しない）。
+ * 戻り値は [{ command, replyToken, source }]。
+ */
+function extractCommands(bodyText) {
+  var body;
+  try { body = JSON.parse(bodyText); } catch (err) { return []; }
+  var out = [];
+  ((body && body.events) || []).forEach(function (e) {
+    if (!e || e.type !== 'message' || !e.message || e.message.type !== 'text' || !e.replyToken) return;
+    var text = String(e.message.text).replace(/[\s　]+/g, '').replace(/^[@＠]?ROBIN制作管理/, '').toUpperCase().replace('ＲＭ', 'RM');
+    var cmd = COMMANDS[text];
+    if (!cmd) return;
+    var src = e.source || {};
+    out.push({ command: cmd, replyToken: e.replyToken, source: src.groupId || src.roomId || src.userId || '' });
+  });
+  return out;
+}
+
 /* ---------- グループIDの受け取り ---------- */
 
 /**
@@ -357,9 +385,40 @@ function extractGroupId(bodyText) {
  * 送信先の切り替えは useGroup() を手で実行したときだけ行う。
  */
 function doPost(e) {
-  var id = extractGroupId(e && e.postData ? e.postData.contents : '');
+  var body = e && e.postData ? e.postData.contents : '';
+  var id = extractGroupId(body);
   if (id) PropertiesService.getScriptProperties().setProperty('LINE_GROUP_ID', id);
+  extractCommands(body).forEach(function (c) {
+    var text;
+    try { text = runCommand_(c); } catch (err) { text = 'うまく処理できませんでした：' + err.message; }
+    if (text) replyLine_(c.replyToken, text);
+  });
   return ContentService.createTextOutput('ok');
+}
+
+/** 送信先か一時停止中のグループから来たコマンドだけを処理し、返信の文を返す。 */
+function runCommand_(c) {
+  var props = PropertiesService.getScriptProperties();
+  var known = parseDestinations(props.getProperty('LINE_TO')).concat(parseDestinations(props.getProperty('LINE_TO_PAUSED')));
+  if (known.indexOf(c.source) === -1) return ''; // 登録していないトークからは受け付けない
+  if (c.command === 'pause') return pauseRM_().message;
+  if (c.command === 'resume') return resumeRM_().message;
+  if (c.command === 'list') return destinationsText_();
+  return ['使えることば（この文だけを送ってください）',
+    'RM停止：RMのグループへの毎朝の通知を止める',
+    'RM再開：止めた通知を再開する',
+    '送信先：いま通知が届くグループを表示する'].join('\n');
+}
+
+/** LINEの返信（受け取った発言への返事。送信数の上限には数えられない）。 */
+function replyLine_(replyToken, text) {
+  UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + lineToken_() },
+    payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] }),
+    muteHttpExceptions: true
+  });
 }
 
 function latestGroupId_() {
@@ -407,47 +466,65 @@ function destinationName_(id) {
   return ({ U: '個人', C: 'グループ', R: '複数人トーク' })[kind] + '（名前を取得できません）';
 }
 
-/** 送信先と一時停止中の送信先を、名前つきでログに出す。 */
-function listDestinations() {
+/** 送信先と一時停止中の送信先を、名前つきの文にする。 */
+function destinationsText_() {
   var props = PropertiesService.getScriptProperties();
   var on = parseDestinations(props.getProperty('LINE_TO'));
   var off = parseDestinations(props.getProperty('LINE_TO_PAUSED'));
-  Logger.log('送信中：' + on.length + 'か所');
-  on.forEach(function (id, i) { Logger.log('  ' + (i + 1) + '. ' + destinationName_(id)); });
-  Logger.log('一時停止中：' + off.length + 'か所');
-  off.forEach(function (id, i) { Logger.log('  ' + (i + 1) + '. ' + destinationName_(id)); });
+  var lines = ['送信中：' + on.length + 'か所'];
+  on.forEach(function (id, i) { lines.push('  ' + (i + 1) + '. ' + destinationName_(id)); });
+  lines.push('一時停止中：' + off.length + 'か所');
+  off.forEach(function (id, i) { lines.push('  ' + (i + 1) + '. ' + destinationName_(id)); });
+  return lines.join('\n');
 }
 
-/** グループ名に RM_KEYWORD を含む送信先を、一時停止に移す。 */
-function pauseRM() {
+/** 送信先と一時停止中の送信先を、名前つきでログに出す。 */
+function listDestinations() {
+  Logger.log(destinationsText_());
+}
+
+/** グループ名に RM_KEYWORD を含む送信先を、一時停止に移す。結果を { ok, message } で返す。 */
+function pauseRM_() {
   var props = PropertiesService.getScriptProperties();
   var on = parseDestinations(props.getProperty('LINE_TO'));
   var hit = on.filter(function (id) { return destinationName_(id).indexOf(RM_KEYWORD) !== -1; });
   if (!hit.length) {
-    listDestinations();
-    throw new Error('送信先に「' + RM_KEYWORD + '」を含むグループがありません。上のログで送信先の名前を確認してください。');
+    var off = parseDestinations(props.getProperty('LINE_TO_PAUSED'));
+    var already = off.some(function (id) { return destinationName_(id).indexOf(RM_KEYWORD) !== -1; });
+    return { ok: false, message: already ? 'RMへの通知は、すでに止まっています。' : '送信先に「' + RM_KEYWORD + '」を含むグループがありません。\n\n' + destinationsText_() };
   }
-  if (hit.length === on.length) throw new Error('外すと送信先が0か所になるため、止めませんでした。全部止める場合は stopDigest を実行してください。');
+  if (hit.length === on.length) return { ok: false, message: '止めると送信先が0か所になるため、止めませんでした。' };
   props.setProperty('LINE_TO', removeDestinations(props.getProperty('LINE_TO'), hit));
   var paused = props.getProperty('LINE_TO_PAUSED');
   hit.forEach(function (id) { paused = addDestination(paused, id); });
   props.setProperty('LINE_TO_PAUSED', paused);
-  Logger.log('一時停止しました：' + hit.map(destinationName_).join('、'));
-  listDestinations();
+  return { ok: true, message: 'RMへの毎朝の通知を止めました。再開するときは「RM再開」と送ってください。\n\n' + destinationsText_() };
 }
 
-/** pauseRM で止めた送信先を、送信先に戻す。 */
-function resumeRM() {
+/** pauseRM で止めた送信先を、送信先に戻す。結果を { ok, message } で返す。 */
+function resumeRM_() {
   var props = PropertiesService.getScriptProperties();
   var off = parseDestinations(props.getProperty('LINE_TO_PAUSED'));
   var hit = off.filter(function (id) { return destinationName_(id).indexOf(RM_KEYWORD) !== -1; });
-  if (!hit.length) throw new Error('一時停止中の送信先に「' + RM_KEYWORD + '」を含むグループがありません。');
+  if (!hit.length) return { ok: false, message: 'RMへの通知は止まっていません。\n\n' + destinationsText_() };
   var to = props.getProperty('LINE_TO');
   hit.forEach(function (id) { to = addDestination(to, id); });
   props.setProperty('LINE_TO', to);
   props.setProperty('LINE_TO_PAUSED', removeDestinations(props.getProperty('LINE_TO_PAUSED'), hit));
-  Logger.log('再開しました：' + hit.map(destinationName_).join('、'));
-  listDestinations();
+  return { ok: true, message: 'RMへの毎朝の通知を再開しました。明日の朝から届きます。\n\n' + destinationsText_() };
+}
+
+/** Apps Scriptの画面から実行する用。 */
+function pauseRM() {
+  var r = pauseRM_();
+  Logger.log(r.message);
+  if (!r.ok) throw new Error(r.message.split('\n')[0]);
+}
+
+function resumeRM() {
+  var r = resumeRM_();
+  Logger.log(r.message);
+  if (!r.ok) throw new Error(r.message.split('\n')[0]);
 }
 
 function todayString_() {
@@ -593,6 +670,6 @@ if (typeof module !== 'undefined') {
     formatShort: formatShort, parseRows: parseRows, classify: classify,
     buildMorningMessage: buildMorningMessage, buildFlexMessage: buildFlexMessage,
     extractGroupId: extractGroupId, parseDestinations: parseDestinations, addDestination: addDestination,
-    removeDestinations: removeDestinations
+    removeDestinations: removeDestinations, extractCommands: extractCommands
   };
 }
