@@ -95,8 +95,8 @@ function parseRows(values, today) {
     var get = function (key) { return String(row[index[key]] == null ? '' : row[index[key]]).trim(); };
     if (!get('project') && !get('title')) continue;
     var dueRaw = get('due');
-    // 投稿予定日は「2026/11/17か11/18」のように2つまで書ける（どちらかに投稿する場合）
-    var postDates = get('postDate').split(/\s*(?:か|〜|~|、|,|または)\s*/)
+    // 投稿予定日は「2026/11/17 or 11/18」のように2つまで書ける（どちらかに投稿する場合）
+    var postDates = get('postDate').split(/\s*(?:or|か|〜|~|、|,|または)\s*/i)
       .map(function (d) { return normalizeDate(d, today); }).filter(function (d) { return d; }).slice(0, 2);
     tasks.push({
       row: r + 1,
@@ -147,10 +147,10 @@ function classify(tasks, today) {
 /* ---------- LINEに送る文面 ---------- */
 
 /** 動画名。投稿予定日があれば「（11/18投稿分）」を付けて、どの回か分かるようにする。 */
-/** 「11/17(火)投稿分」または「11/17(火)か11/18(水)投稿分」。投稿日が無ければ ''。 */
+/** 「11/17(火)投稿分」または「11/17(火) or 11/18(水)投稿分」。投稿日が無ければ ''。 */
 function postLabel(t) {
   if (!t.postDate) return '';
-  return formatShort(t.postDate) + (t.postDate2 ? 'か' + formatShort(t.postDate2) : '') + '投稿分';
+  return formatShort(t.postDate) + (t.postDate2 ? ' or ' + formatShort(t.postDate2) : '') + '投稿分';
 }
 
 function videoName(t) {
