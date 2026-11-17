@@ -8,8 +8,9 @@
  *   PAGE_URL   : 閲覧ページのURL（任意。入れると通知の末尾に付く）
  */
 
-var CODE_VERSION = '2026-11-17b'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
+var CODE_VERSION = '2026-11-17c'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
 var SHEET_NAME = 'タスク';
+var LOG_SHEET_NAME = 'LINEログ'; // botが受け取ったグループの発言を書き残すタブ
 var TZ = 'Asia/Tokyo';
 var SEND_HOUR = 8; // 毎朝の送信時刻（時）。実際の送信は前後15分ほどずれる
 var CLOSED_STATUSES = ['完了', '保留'];
@@ -392,6 +393,27 @@ function extractCommands(bodyText) {
   return out;
 }
 
+/* ---------- 発言の記録 ---------- */
+
+/**
+ * Webhookの本文から、記録する発言を取り出す。
+ * 戻り値は [{ time, chatId, userId, kind, text }]。time は送信時刻（ミリ秒）。
+ */
+function extractLogEntries(bodyText) {
+  var body;
+  try { body = JSON.parse(bodyText); } catch (err) { return []; }
+  var LABELS = { image: '［画像］', video: '［動画］', audio: '［音声］', file: '［ファイル］', sticker: '［スタンプ］', location: '［位置情報］' };
+  var out = [];
+  ((body && body.events) || []).forEach(function (e) {
+    if (!e || e.type !== 'message' || !e.message) return;
+    var src = e.source || {};
+    var m = e.message;
+    var text = m.type === 'text' ? String(m.text) : (LABELS[m.type] || '［' + m.type + '］') + (m.fileName ? ' ' + m.fileName : '');
+    out.push({ time: Number(e.timestamp) || 0, chatId: src.groupId || src.roomId || src.userId || '', userId: src.userId || '', kind: m.type, text: text });
+  });
+  return out;
+}
+
 /* ---------- グループIDの受け取り ---------- */
 
 /**
@@ -422,12 +444,57 @@ function doPost(e) {
   var body = e && e.postData ? e.postData.contents : '';
   var id = extractGroupId(body);
   if (id) PropertiesService.getScriptProperties().setProperty('LINE_GROUP_ID', id);
+  try { logMessages_(body); } catch (err) { /* 記録に失敗しても返事やコマンドは止めない */ }
   extractCommands(body).forEach(function (c) {
     var text;
     try { text = runCommand_(c); } catch (err) { text = 'うまく処理できませんでした：' + err.message; }
     if (text) replyLine_(c.replyToken, text);
   });
   return ContentService.createTextOutput('ok');
+}
+
+/** 受け取った発言を「LINEログ」タブに1行ずつ書き残す。送信先か一時停止中のトークの発言だけ。 */
+function logMessages_(body) {
+  var entries = extractLogEntries(body);
+  if (!entries.length) return;
+  var props = PropertiesService.getScriptProperties();
+  var known = parseDestinations(props.getProperty('LINE_TO')).concat(parseDestinations(props.getProperty('LINE_TO_PAUSED')));
+  entries = entries.filter(function (e) { return known.indexOf(e.chatId) !== -1; });
+  if (!entries.length) return;
+  var ss = SpreadsheetApp.getActive();
+  var sheet = ss.getSheetByName(LOG_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(LOG_SHEET_NAME);
+    sheet.appendRow(['日時', 'トーク', '送信者', '種類', '内容']);
+    sheet.setFrozenRows(1);
+  }
+  var rows = entries.map(function (e) {
+    return [Utilities.formatDate(new Date(e.time || Date.now()), TZ, 'yyyy/MM/dd HH:mm:ss'),
+      cachedName_('chat:' + e.chatId, function () { return destinationName_(e.chatId); }),
+      e.userId ? cachedName_('user:' + e.chatId + ':' + e.userId, function () { return memberName_(e.chatId, e.userId); }) : '',
+      e.kind, e.text];
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+}
+
+/** 名前の取得結果を6時間おぼえておき、LINEへの問い合わせを減らす。 */
+function cachedName_(key, fetch) {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get(key);
+  if (hit) return hit;
+  var name = fetch() || '';
+  if (name) cache.put(key, name, 21600);
+  return name;
+}
+
+/** グループのメンバーの表示名。取れなければ ''。 */
+function memberName_(chatId, userId) {
+  var kind = chatId.charAt(0);
+  var url = kind === 'C' ? 'https://api.line.me/v2/bot/group/' + chatId + '/member/' + userId
+          : kind === 'R' ? 'https://api.line.me/v2/bot/room/' + chatId + '/member/' + userId
+          : 'https://api.line.me/v2/bot/profile/' + userId;
+  var res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + lineToken_() }, muteHttpExceptions: true });
+  return res.getResponseCode() === 200 ? (JSON.parse(res.getContentText()).displayName || '') : '';
 }
 
 /** 送信先か一時停止中のグループから来たコマンドだけを処理し、返信の文を返す。 */
@@ -789,6 +856,6 @@ if (typeof module !== 'undefined') {
     formatShort: formatShort, parseRows: parseRows, classify: classify,
     buildMorningMessage: buildMorningMessage, buildFlexMessage: buildFlexMessage,
     extractGroupId: extractGroupId, parseDestinations: parseDestinations, addDestination: addDestination,
-    removeDestinations: removeDestinations, extractCommands: extractCommands
+    removeDestinations: removeDestinations, extractCommands: extractCommands, extractLogEntries: extractLogEntries
   };
 }

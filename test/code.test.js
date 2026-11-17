@@ -225,3 +225,19 @@ test('期限日を2つ書くと、遅いほうの日まで通知に残る', () =
   assert.ok(card.includes('"水/木"'));
   assert.match(gas.buildMorningMessage(on17, '2026-11-17', ''), /・水\/木のどちらか ケント／ちいかわ回 編集・提出/);
 });
+
+test('Webhookの本文から、記録する発言を取り出す', () => {
+  const g = 'C' + 'a'.repeat(32), u = 'U' + 'b'.repeat(32);
+  const body = JSON.stringify({ events: [
+    { type: 'message', timestamp: 1794885000000, source: { type: 'group', groupId: g, userId: u }, message: { type: 'text', text: 'ちいかわは水木期限' } },
+    { type: 'message', timestamp: 1794885001000, source: { type: 'group', groupId: g, userId: u }, message: { type: 'image' } },
+    { type: 'message', timestamp: 1794885002000, source: { type: 'group', groupId: g, userId: u }, message: { type: 'file', fileName: '台本.docx' } },
+    { type: 'join', source: { type: 'group', groupId: g } }
+  ] });
+  const e = JSON.parse(JSON.stringify(gas.extractLogEntries(body)));
+  assert.equal(e.length, 3);
+  assert.deepEqual(e[0], { time: 1794885000000, chatId: g, userId: u, kind: 'text', text: 'ちいかわは水木期限' });
+  assert.equal(e[1].text, '［画像］');
+  assert.equal(e[2].text, '［ファイル］ 台本.docx');
+  assert.equal(gas.extractLogEntries('壊れた本文').length, 0);
+});
