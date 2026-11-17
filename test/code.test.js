@@ -239,3 +239,26 @@ test('Webhookの本文から、記録する発言を取り出す', () => {
   assert.equal(e[2].text, '［ファイル］ 台本.docx');
   assert.equal(gas.extractLogEntries('壊れた本文').length, 0);
 });
+
+test('毎朝8:00ちょうどの予約', () => {
+  const made = [];
+  const fakeTrigger = name => ({ getHandlerFunction: () => name });
+  let triggers = [fakeTrigger('sendMorningDigest'), fakeTrigger('sendAtExactTime')];
+  const builder = name => {
+    const b = { timeBased: () => b, everyDays: () => b, atHour: h => { b.hour = h; return b; }, inTimezone: () => b,
+      at: d => { b.at = d; return b; }, create: () => { made.push({ name, hour: b.hour, at: b.at }); triggers.push(fakeTrigger(name)); } };
+    return b;
+  };
+  const sb = { module: { exports: {} },
+    ScriptApp: { getProjectTriggers: () => triggers.slice(), deleteTrigger: t => { triggers = triggers.filter(x => x !== t); }, newTrigger: builder },
+    Utilities: { formatDate: () => '2026-11-18' },
+    Date: class extends Date { static now() { return new Date('2026-11-18T07:20:00+09:00').getTime(); } } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../gas/Code.gs'), 'utf8'), sb);
+  sb.setup();
+  assert.deepEqual(triggers.map(t => t.getHandlerFunction()).sort(), ['planExactSend', 'sendAtExactTime']);
+  assert.equal(made[0].name, 'planExactSend');
+  assert.equal(made[0].hour, 7);
+  assert.equal(made[1].at.toISOString(), '2026-11-17T23:00:00.000Z');
+  sb.stopDigest();
+  assert.equal(triggers.length, 0);
+});

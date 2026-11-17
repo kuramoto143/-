@@ -2,7 +2,7 @@
 
 動画制作の期限を1枚のGoogleスプレッドシートで管理し、同じ表から次の2つを動かします。
 
-- 毎朝8時台に、期限切れ・今日が期限・明日が期限のタスクをLINEへ送る
+- 毎朝8:00に、期限切れ・今日が期限・明日が期限のタスクをLINEへ送る
 - スマホでも見られる閲覧ページを表示する
 
 ![閲覧ページ](docs/preview-desktop.png)
@@ -53,7 +53,7 @@
 ### 3. 送信を試して、毎朝の通知を登録する
 
 1. エディタ上部の関数の選択で `sendMorningDigest` を選び、「実行」を押します。初回は権限の確認画面が出るので許可します。自分のLINEに期限一覧が届けば成功です。
-2. 続けて `setup` を選んで「実行」します。これで毎朝8時台に送られます。Apps Scriptの時間指定は前後15分ほどずれます（[公式の説明](https://developers.google.com/apps-script/guides/triggers/installable#time-driven_triggers)）。
+2. 続けて `setup` を選んで「実行」します。これで毎朝8:00ちょうどに送られます。毎日の予約は「8時台」までしか指定できず前後15分ほどずれるため（[公式の説明](https://developers.google.com/apps-script/guides/triggers/installable#time-driven_triggers)）、毎朝7時台にその日の8:00:00に1回だけ動く予約を作る仕組みにしています。
 
 登録後は、スプレッドシートのメニュー「制作管理」からも「今すぐLINEに送る」「通知を止める」を選べます。
 

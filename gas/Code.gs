@@ -8,11 +8,11 @@
  *   PAGE_URL   : 閲覧ページのURL（任意。入れると通知の末尾に付く）
  */
 
-var CODE_VERSION = '2026-11-18b'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
+var CODE_VERSION = '2026-11-18c'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
 var SHEET_NAME = 'タスク';
 var LOG_SHEET_NAME = 'LINEログ'; // botが受け取ったグループの発言を書き残すタブ
 var TZ = 'Asia/Tokyo';
-var SEND_HOUR = 8; // 毎朝の送信時刻（時）。実際の送信は前後15分ほどずれる
+var SEND_HOUR = 8; // 毎朝の送信時刻（時）。この時刻の00分00秒に送る（setup を参照）
 var CLOSED_STATUSES = ['完了', '保留'];
 var WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 var LINE_TEXT_LIMIT = 5000;
@@ -726,8 +726,12 @@ function selfCheck() {
   if (off.length) results.push('　　一時停止中：' + off.map(destinationName_).join('、'));
 
   // 3. 毎朝の予約
-  var trig = ScriptApp.getProjectTriggers().filter(function (t) { return t.getHandlerFunction() === 'sendMorningDigest'; });
-  add(trig.length === 1, '毎朝の予約', trig.length === 1 ? '毎朝' + SEND_HOUR + '時台' : trig.length + '件（1件が正常。setup を実行してください）');
+  var all = ScriptApp.getProjectTriggers();
+  var plan = all.filter(function (t) { return t.getHandlerFunction() === 'planExactSend'; });
+  var old = all.filter(function (t) { return t.getHandlerFunction() === 'sendMorningDigest'; });
+  add(plan.length === 1 && !old.length, '毎朝の予約',
+    plan.length === 1 && !old.length ? '毎朝' + SEND_HOUR + ':00ちょうど' :
+    '古い形か重複しています。メニューの「毎朝' + SEND_HOUR + '時の通知を登録する」を押してください');
 
   // 4. Webhook（LINEがグループの発言をこのスクリプトに渡すか）
   var appUrl = ScriptApp.getService().getUrl() || '';
@@ -794,20 +798,43 @@ function sendMorningDigest() {
   if (errors.length) throw new Error(errors.join('\n'));
 }
 
-/** 毎朝の通知を登録する。何度実行しても通知は1日1回のまま。 */
-function setup() {
+var DIGEST_HANDLERS = ['sendMorningDigest', 'planExactSend', 'sendAtExactTime'];
+
+function deleteTriggers_(names) {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'sendMorningDigest') ScriptApp.deleteTrigger(t);
+    if (names.indexOf(t.getHandlerFunction()) !== -1) ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('sendMorningDigest')
-    .timeBased().everyDays(1).atHour(SEND_HOUR).nearMinute(0).inTimezone(TZ).create();
+}
+
+/**
+ * 毎朝の通知を登録する。何度実行しても通知は1日1回のまま。
+ * 毎日の予約は「何時台」までしか指定できないため、SEND_HOUR の1時間前に planExactSend を動かし、
+ * その日の SEND_HOUR:00:00 ちょうどに1回だけ動く予約（sendAtExactTime）を作る。
+ */
+function setup() {
+  deleteTriggers_(DIGEST_HANDLERS);
+  ScriptApp.newTrigger('planExactSend')
+    .timeBased().everyDays(1).atHour(SEND_HOUR - 1).inTimezone(TZ).create();
+  planExactSend();
+}
+
+/** 今日の SEND_HOUR:00:00 に1回だけ送る予約を作る。その時刻を過ぎていたら作らない。 */
+function planExactSend() {
+  deleteTriggers_(['sendAtExactTime']);
+  var day = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  var at = new Date(day + 'T' + (SEND_HOUR < 10 ? '0' : '') + SEND_HOUR + ':00:00+09:00');
+  if (at.getTime() > Date.now()) ScriptApp.newTrigger('sendAtExactTime').timeBased().at(at).create();
+}
+
+/** planExactSend が作った予約から呼ばれる。使い終わった予約を消してから送る。 */
+function sendAtExactTime() {
+  deleteTriggers_(['sendAtExactTime']);
+  sendMorningDigest();
 }
 
 /** 毎朝の通知を止める。 */
 function stopDigest() {
-  ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'sendMorningDigest') ScriptApp.deleteTrigger(t);
-  });
+  deleteTriggers_(DIGEST_HANDLERS);
 }
 
 function onOpen() {
