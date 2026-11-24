@@ -8,7 +8,7 @@
  *   PAGE_URL   : 閲覧ページのURL（任意。入れると通知の末尾に付く）
  */
 
-var CODE_VERSION = '2026-11-18c'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
+var CODE_VERSION = '2026-11-25a'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
 var SHEET_NAME = 'タスク';
 var LOG_SHEET_NAME = 'LINEログ'; // botが受け取ったグループの発言を書き残すタブ
 var TZ = 'Asia/Tokyo';
@@ -256,7 +256,8 @@ function fxRow(t, showDate) {
   // どの行も同じ形にする。1行目は「動画名の作業」、2行目は「案件・投稿日」
   var isVideoWork = !!t.work && t.work !== 'その他';
   var title = (t.title || t.project) + (isVideoWork ? 'の' + t.work : '');
-  var post = t.postDate ? postLabel(t).replace(/投稿分$/, '投稿') : (isVideoWork ? '投稿日未定' : '投稿なし');
+  var noVideo = !isVideoWork || t.project === '管理' || t.work === 'MTG'; // 動画を作らない行
+  var post = t.postDate ? postLabel(t).replace(/投稿分$/, '投稿') : (noVideo ? '投稿なし' : '投稿日未定');
   var subParts = [t.project, post]; // 動画名が無い行も、形を揃えるため案件名を出す
   var middle = [fxText(title, { size: 'sm', weight: 'bold', color: FX.ink, wrap: true })];
   if (subParts.length) middle.push(fxText(subParts.join('・'), { size: 'xs', color: FX.sub, wrap: true }));
