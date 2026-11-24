@@ -122,7 +122,7 @@ test('カード形式：倉本が先、空の文字なし、容量内', () => {
   const tasks = gas.parseRows(values, '2026-11-15');
   const msg = gas.buildFlexMessage(tasks, '2026-11-15', { page: 'https://script.google.com/x' });
   assert.equal(msg.type, 'flex');
-  assert.equal(msg.altText, '制作の期限 11/15(日)：今日3件・明日1件・明後日0件');
+  assert.equal(msg.altText, '制作の期限 11/15(日)：今日3件・明日1件・明後日0件・期限日不明1件');
   const texts = [];
   (function walk(n) {
     if (Array.isArray(n)) return n.forEach(walk);
@@ -133,6 +133,8 @@ test('カード形式：倉本が先、空の文字なし、容量内', () => {
   })(msg.contents);
   assert.ok(texts.indexOf('倉本　2件') < texts.indexOf('takuma　1件'));
   assert.ok(!texts.some(t => t.includes('期限未設定')));
+  assert.ok(texts.includes('期限日不明'));
+  assert.ok(texts.includes('未定'));
   assert.equal(msg.contents.footer.contents.length, 1);
 
   const many = [HEADER];

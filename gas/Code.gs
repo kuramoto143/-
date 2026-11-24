@@ -8,7 +8,7 @@
  *   PAGE_URL   : 閲覧ページのURL（任意。入れると通知の末尾に付く）
  */
 
-var CODE_VERSION = '2026-11-25a'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
+var CODE_VERSION = '2026-11-25b'; // コードを直したら更新する。selfCheck でデプロイ済みの版と比べる
 var SHEET_NAME = 'タスク';
 var LOG_SHEET_NAME = 'LINEログ'; // botが受け取ったグループの発言を書き残すタブ
 var TZ = 'Asia/Tokyo';
@@ -251,7 +251,7 @@ function fxText(text, opts) {
 }
 
 function fxRow(t, showDate) {
-  var when = showDate ? formatShort(t.due).replace(/\(.\)$/, '') : (dueDays(t) || t.time || '終日');
+  var when = !t.due ? '未定' : showDate ? formatShort(t.due).replace(/\(.\)$/, '') : (dueDays(t) || t.time || '終日');
   var strong = showDate || !!t.time || !!t.dueFirst;
   // どの行も同じ形にする。1行目は「動画名の作業」、2行目は「案件・投稿日」
   var isVideoWork = !!t.work && t.work !== 'その他';
@@ -281,6 +281,7 @@ function buildFlexMessage(tasks, today, urls) {
     { title: '明日が期限', short: '明日', date: addDays(today, 1), list: c.tomorrow, color: FX.sub },
     { title: '明後日が期限', short: '明後日', date: addDays(today, 2), list: c.dayAfter, color: FX.sub }
   ]; // 3日分は、期限のものが無い日も「なし」と出して、見落としではないと分かるようにする
+  if (c.noDue.length) sections.push({ title: '期限日不明', short: '期限日不明', date: '', list: c.noDue, color: FX.sub });
 
   var body = [], rows = 0, omitted = 0;
   sections.forEach(function (s, i) {
@@ -289,7 +290,7 @@ function buildFlexMessage(tasks, today, urls) {
       type: 'box', layout: 'baseline', margin: i > 0 ? 'xl' : 'none', spacing: 'sm',
       contents: [
         fxText(s.title, { size: 'md', weight: 'bold', color: s.color, flex: 0 }),
-        fxText(formatShort(s.date) + '　' + s.list.length + '件', { size: 'xs', color: FX.sub, flex: 0 })
+        fxText((s.date ? formatShort(s.date) + '　' : '') + s.list.length + '件', { size: 'xs', color: FX.sub, flex: 0 })
       ]
     });
     if (!s.list.length) {
